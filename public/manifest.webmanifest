@@ -1,0 +1,9 @@
+{
+  "name": "Picky",
+  "short_name": "Picky",
+  "description": "Snap the menu, see what you'll love, and swipe with your tablemate to find dishes to split.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e8590c"
+}
