@@ -48,8 +48,16 @@ jobs:
             echo "Cloudflare secrets aren't set yet, so no preview was uploaded." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          printf 'ANTHROPIC_API_KEY=\n' > .secrets.env
-          if ! npx wrangler versions upload --preview-alias "pr-${{ github.event.pull_request.number }}" --secrets-file .secrets.env > upload.log 2>&1; then
+          # Upload the Anthropic key only when the GitHub secret is set, so a
+          # missing secret never blanks the Worker's existing one.
+          secret_args=()
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            jq -n --arg key "$ANTHROPIC_API_KEY" '{ANTHROPIC_API_KEY: $key}' > .secrets.json
+            secret_args=(--secrets-file .secrets.json)
+          else
+            echo "::warning title=ANTHROPIC_API_KEY not set::The Worker's Anthropic key was left unchanged."
+          fi
+          if ! npx wrangler versions upload --preview-alias "pr-${{ github.event.pull_request.number }}" "${secret_args[@]}" > upload.log 2>&1; then
             cat upload.log
             if grep -qiE "10007|does not (yet )?exist" upload.log; then
               echo "::notice title=No preview yet::The Worker is created by the first deploy to main; previews start after that."
@@ -76,8 +84,16 @@ jobs:
       - run: npx vite build
       - name: Deploy Worker
         run: |
-          printf 'ANTHROPIC_API_KEY=\n' > .secrets.env
-          if ! npx wrangler deploy --secrets-file .secrets.env > deploy.log 2>&1; then
+          # Upload the Anthropic key only when the GitHub secret is set, so a
+          # missing secret never blanks the Worker's existing one.
+          secret_args=()
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            jq -n --arg key "$ANTHROPIC_API_KEY" '{ANTHROPIC_API_KEY: $key}' > .secrets.json
+            secret_args=(--secrets-file .secrets.json)
+          else
+            echo "::warning title=ANTHROPIC_API_KEY not set::The Worker's Anthropic key was left unchanged."
+          fi
+          if ! npx wrangler deploy "${secret_args[@]}" > deploy.log 2>&1; then
             cat deploy.log
             echo "::error title=wrangler deploy failed::$(tail -n 25 deploy.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
