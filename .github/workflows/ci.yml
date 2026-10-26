@@ -51,12 +51,12 @@ jobs:
           printf 'ANTHROPIC_API_KEY=\n' > .secrets.env
           if ! npx wrangler versions upload --preview-alias "pr-${{ github.event.pull_request.number }}" --secrets-file .secrets.env > upload.log 2>&1; then
             cat upload.log
-            # Surface the error as an annotation so it's readable without the full log.
-            echo "::error title=wrangler versions upload failed::$(tail -n 25 upload.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
-            if grep -qiE "10007|does not exist" upload.log; then
-              echo "The Worker doesn't exist until the first deploy to main, so there's no preview yet." >> "$GITHUB_STEP_SUMMARY"
+            if grep -qiE "10007|does not (yet )?exist" upload.log; then
+              echo "::notice title=No preview yet::The Worker is created by the first deploy to main; previews start after that."
               exit 0
             fi
+            # Surface the error as an annotation so it's readable without the full log.
+            echo "::error title=wrangler versions upload failed::$(tail -n 25 upload.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
           fi
           cat upload.log
