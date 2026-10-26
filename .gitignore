@@ -3,5 +3,5 @@ dist
 .wrangler
 .dev.vars
 *.log
-.secrets.env
+.secrets.json
 *.tsbuildinfo
