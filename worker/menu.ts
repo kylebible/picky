@@ -13,6 +13,7 @@ const SYSTEM_PROMPT = `You read photos of restaurant menus and return every dish
 Rules:
 - Include every orderable item: starters, mains, sides, desserts and drinks. Skip headings, taglines and contact details.
 - section is the menu heading the dish sits under.
+- category: the closest kind of dish from the allowed list, judged from the dish itself rather than the section (a crab cake under Starters is shellfish). Use "other" only when nothing fits.
 - price: the number printed for the dish, without the currency symbol. Set price_status to "listed" when a number is printed, "market_price" when the menu says MP, market price, seasonal price or ask your server, and "not_listed" when the menu shows no price for it. price is null unless price_status is "listed".
 - ingredients: mark each one "stated" when the menu text names it, or "likely" when you infer it from the dish (for example garlic in garlic bread is stated, flour is likely).
 - allergens: only from the allowed list, each marked "stated" or "likely" the same way. Prefer listing a likely allergen over leaving it out.
@@ -78,11 +79,23 @@ async function readWith(
   return { menu, usage: response.usage };
 }
 
-export async function parseMenu(env: Env, photos: Photo[]): Promise<ParsedMenuResponse> {
+/**
+ * Reads the menu on MENU_MODEL, retrying on MENU_RETRY_MODEL when the result
+ * looks wrong. `strong` skips straight to the retry model, for when the person
+ * taps "This looks wrong".
+ */
+export async function parseMenu(env: Env, photos: Photo[], strong = false): Promise<ParsedMenuResponse> {
   if (photos.length === 0) throw new MenuParseError("Add at least one photo");
   if (photos.length > MAX_PHOTOS) throw new MenuParseError(`Up to ${MAX_PHOTOS} photos per menu`);
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  if (strong) {
+    const read = await readWith(client, env.MENU_RETRY_MODEL, photos, true);
+    if (!read.menu) throw new MenuParseError("Couldn't read this menu. Try a sharper photo.");
+    const usage = { input_tokens: read.usage.input_tokens, output_tokens: read.usage.output_tokens };
+    return { menu: read.menu, model: env.MENU_RETRY_MODEL, retried: true, usage };
+  }
+
   const first = await readWith(client, env.MENU_MODEL, photos, false);
   const usage = { input_tokens: first.usage.input_tokens, output_tokens: first.usage.output_tokens };
 

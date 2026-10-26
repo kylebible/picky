@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CATEGORIES } from "./categories";
 
 // The 14 major allergens recognised in EU/UK labelling law, plus sesame-style
 // naming that US menus use. Keep this list closed so ranking can match on it.
@@ -24,6 +25,8 @@ const Source = z.enum(["stated", "likely"]);
 export const DishSchema = z.object({
   name: z.string(),
   section: z.string().nullable(),
+  // Picks the drawing the app shows for the dish.
+  category: z.enum(CATEGORIES),
   // Price as printed, in the menu's currency. Null unless price_status is "listed".
   price: z.number().nullable(),
   price_status: z.enum(["listed", "market_price", "not_listed"]),

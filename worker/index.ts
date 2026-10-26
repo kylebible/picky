@@ -32,7 +32,7 @@ app.post("/parse-menu", async (c) => {
     const form = await c.req.formData();
     const files = form.getAll("photos").filter((f): f is File => f instanceof File);
     const photos = await Promise.all(files.map(toPhoto));
-    return c.json(await parseMenu(c.env, photos));
+    return c.json(await parseMenu(c.env, photos, c.req.query("strong") === "1"));
   } catch (err) {
     if (err instanceof MenuParseError) return c.json({ error: err.message }, 400);
     throw err;
