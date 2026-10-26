@@ -13,8 +13,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      // No database_id: the first deploy creates the database automatically.
       "database_name": "picky",
+      "database_id": "482d345b-b892-4546-8526-81bbee3f047b",
       "migrations_dir": "migrations"
     }
   ],

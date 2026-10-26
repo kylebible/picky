@@ -27,7 +27,7 @@ npm run dev
 
 ## Deploys
 
-Merging to `main` deploys to production and applies D1 migrations. Each pull request gets a preview URL in its workflow summary. The first deploy creates the D1 database automatically.
+Merging to `main` deploys to production and applies D1 migrations. Each pull request gets a preview URL in its workflow summary. The D1 database `picky` already exists; its id is in `wrangler.jsonc`.
 
 One-time setup, as GitHub repository secrets:
 
