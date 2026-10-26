@@ -6,6 +6,7 @@ function dish(price_status: Dish["price_status"]): Dish {
   return {
     name: "Dish",
     section: null,
+    category: "other",
     price: price_status === "listed" ? 10 : null,
     price_status,
     description: null,
