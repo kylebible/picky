@@ -1,0 +1,30 @@
+{
+  // Every Cloudflare resource Picky uses is declared here. CI deploys it on merge to main.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "picky",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      // No database_id: the first deploy creates the database automatically.
+      "database_name": "picky",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "SPLIT_SESSION", "class_name": "SplitSession" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SplitSession"] }],
+  "vars": {
+    "MENU_MODEL": "claude-haiku-5-5",
+    "MENU_RETRY_MODEL": "claude-sonnet-5-5"
+  }
+  // Secrets (set by CI, never committed): ANTHROPIC_API_KEY
+}
