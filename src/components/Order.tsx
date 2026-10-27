@@ -29,13 +29,35 @@ export function OrderBar() {
   const e = estimate(items, menu.menu.dishes, parseFloat(taxPercent), tipPercent);
   return (
     <div className="order-bar">
-      <span>
+      <a
+        href="/order"
+        onClick={(ev) => {
+          ev.preventDefault();
+          navigate("/order", { replace: true });
+        }}
+      >
         {count} {count === 1 ? "dish" : "dishes"}
         {e.subtotal > 0 ? `, about ${formatPrice(Math.round(e.total), menu.menu.currency)}` : ""}
-      </span>
-      <button type="button" className="bar-btn" onClick={() => navigate("/order", { replace: true })}>
-        See my order
-      </button>
+      </a>
+      <SplitButton />
+    </div>
+  );
+}
+
+export function SplitButton() {
+  return (
+    <button type="button" className="bar-btn" onClick={() => navigate("/split")}>
+      Split it with someone
+    </button>
+  );
+}
+
+/** The bar at the bottom of the Order tab. */
+export function ShareMoreBar() {
+  return (
+    <div className="order-bar">
+      <span>Want to share more?</span>
+      <SplitButton />
     </div>
   );
 }

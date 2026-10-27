@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Dish } from "../../shared/menu";
 import { estimate, itemPrice, lineTotal, type OrderItem } from "../../shared/order";
 import { MenuHeader } from "../components/MenuHeader";
+import { ShareMoreBar } from "../components/Order";
 import { Plate } from "../components/Plate";
 import { Redirect } from "../components/ui";
 import { formatPrice } from "../lib/format";
@@ -130,6 +131,8 @@ export function OrderScreen() {
           </div>
         </>
       )}
+      <div className="grow" />
+      <ShareMoreBar />
     </main>
   );
 }
