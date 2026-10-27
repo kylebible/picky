@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
-import { ALLERGENS, MenuSchema, normalizeMenu, type MenuStreamEvent } from "../shared/menu";
+import { ALLERGENS, MenuSchema, normalizeMenu } from "../shared/menu";
 import { DIETS } from "../shared/profile";
 import { TABLE_CODE } from "../shared/split";
-import { MAX_PHOTOS, MenuParseError, newTrace, parseMenu, toPhoto } from "./menu";
+import { MAX_PHOTOS, MenuParseError, toPhoto } from "./menu";
 
+export { MenuScan } from "./menu-scan";
 export { SplitSession } from "./split-session";
 
 type AppEnv = { Bindings: Env; Variables: { userId: string } };
@@ -80,9 +81,13 @@ app.post("/events", async (c) => {
   return c.body(null, 204);
 });
 
-// Bad uploads get a plain 400. Otherwise the reply streams newline-delimited
-// MenuStreamEvents, so the phone can show dishes while the menu is still being read.
-app.post("/parse-menu", async (c) => {
+const scan = (env: Env, id: string) => env.MENU_SCAN.get(env.MENU_SCAN.idFromName(id));
+const SCAN_ID = /^[0-9a-f-]{36}$/;
+
+// Starts reading a menu. Bad uploads get a plain 400; otherwise the reply is
+// the scan id, and the read runs in a MenuScan Durable Object so it survives
+// the phone leaving the app. Follow it with GET /scans/:id/events.
+app.post("/scans", async (c) => {
   let photos;
   try {
     const form = await c.req.formData();
@@ -94,69 +99,65 @@ app.post("/parse-menu", async (c) => {
     if (err instanceof MenuParseError) return c.json({ error: err.message }, 400);
     throw err;
   }
-
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = writable.getWriter();
-  const encoder = new TextEncoder();
-  const send = (event: MenuStreamEvent) => {
-    writer.write(encoder.encode(JSON.stringify(event) + "\n")).catch(() => {});
-  };
-  // A careful read can go minutes without a dish to send; iOS Safari drops idle fetches.
-  const ping = setInterval(() => send({ type: "ping" }), 5000);
-  const trace = newTrace();
-  const started = Date.now();
-  const save = async (outcome: "done" | "error", result?: { model: string; retried: boolean }, error?: string) => {
-    try {
-      await c.env.DB.prepare(
-        `INSERT INTO menu_reads (device_id, strong, pages, outcome, error, ms, final_model, retried, reasons, reads, app_version)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(
-          c.get("userId"),
-          trace.strong ? 1 : 0,
-          photos.length,
-          outcome,
-          error ?? null,
-          Date.now() - started,
-          result?.model ?? null,
-          result ? (result.retried ? 1 : 0) : null,
-          JSON.stringify(trace.reasons),
-          JSON.stringify(trace.reads),
-          c.req.header("x-picky-version") ?? null,
-        )
-        .run();
-    } catch (err) {
-      console.error("saving menu read failed", err);
-    }
-  };
-  c.executionCtx.waitUntil(
-    parseMenu(c.env, photos, c.req.query("strong") === "1", send, trace)
-      .then(
-        async (result) => {
-          // Save before the final event: once the response ends, unfinished work can be cancelled.
-          await save("done", result);
-          send({ type: "done", result });
-        },
-        async (err) => {
-          if (!(err instanceof MenuParseError)) console.error("parse-menu failed", err);
-          const known = err instanceof MenuParseError;
-          const reason = String(err instanceof Error ? err.message : err).slice(0, 300);
-          await save("error", undefined, reason);
-          send({
-            type: "error",
-            message: known ? err.message : "Something went wrong reading the menu.",
-            detail: known ? undefined : reason,
-          });
-        },
-      )
-      .finally(() => {
-        clearInterval(ping);
-        writer.close().catch(() => {});
-      }),
-  );
-  return new Response(readable, {
-    headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+  const id = crypto.randomUUID();
+  const strong = c.req.query("strong") === "1";
+  await c.env.DB.prepare("INSERT INTO scans (id, device_id, strong, pages) VALUES (?, ?, ?, ?)")
+    .bind(id, c.get("userId"), strong ? 1 : 0, photos.length)
+    .run();
+  await scan(c.env, id).start({
+    id,
+    photos,
+    strong,
+    deviceId: c.get("userId"),
+    appVersion: c.req.header("x-picky-version") ?? null,
   });
+  return c.json({ id });
+});
+
+type ScanRow = {
+  id: string;
+  created_at: string;
+  status: "reading" | "done" | "error";
+  pages: number;
+  restaurant_name: string | null;
+  dish_count: number | null;
+  error: string | null;
+};
+
+/** This phone's recent scans that didn't fail, newest first, without their menus. */
+app.get("/scans", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, created_at, status, pages, restaurant_name, dish_count, error FROM scans
+     WHERE device_id = ? AND status != 'error' ORDER BY created_at DESC LIMIT 20`,
+  )
+    .bind(c.get("userId"))
+    .all<ScanRow>();
+  return c.json({ scans: results });
+});
+
+/** One scan, with its menu once it's done. Only the phone that took it can read it. */
+app.get("/scans/:id", async (c) => {
+  const row = await c.env.DB.prepare(
+    `SELECT id, created_at, status, pages, restaurant_name, dish_count, error, result FROM scans
+     WHERE id = ? AND device_id = ?`,
+  )
+    .bind(c.req.param("id"), c.get("userId"))
+    .first<ScanRow & { result: string | null }>();
+  if (!row) return c.json({ error: "There's no scan with that id" }, 404);
+  const { result, ...rest } = row;
+  return c.json({ ...rest, result: result ? JSON.parse(result) : null });
+});
+
+// Newline-delimited ScanEvents after ?from=<seq>, then live ones until the scan
+// ends. A phone that lost the connection reconnects with the last seq it saw.
+app.get("/scans/:id/events", async (c) => {
+  const id = c.req.param("id");
+  if (!SCAN_ID.test(id)) return c.json({ error: "There's no scan with that id" }, 404);
+  const owner = await c.env.DB.prepare("SELECT 1 FROM scans WHERE id = ? AND device_id = ?")
+    .bind(id, c.get("userId"))
+    .first();
+  if (!owner) return c.json({ error: "There's no scan with that id" }, 404);
+  return scan(c.env, id).fetch(new Request(c.req.url, c.req.raw));
 });
 
 const CreateTableSchema = z.object({

@@ -6,6 +6,7 @@ import { MenuScreen } from "./screens/MenuScreen";
 import { OrderScreen } from "./screens/OrderScreen";
 import { Picks } from "./screens/Picks";
 import { Reading } from "./screens/Reading";
+import { Recent } from "./screens/Recent";
 import { SetupAllergies, SetupTastes } from "./screens/Setup";
 import { Join, JoinCode, Matches, Share, SplitStart, Swipe } from "./screens/Split";
 import { Welcome } from "./screens/Welcome";
@@ -16,6 +17,7 @@ export function App() {
 
   if (path === "/snap") return <Capture />;
   if (path === "/reading") return <Reading />;
+  if (path === "/recent") return <Recent />;
   if (path === "/menu") return <MenuScreen />;
   if (path === "/picks") return <Picks />;
   if (path === "/order") return <OrderScreen />;

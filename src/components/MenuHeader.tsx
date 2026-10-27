@@ -21,6 +21,9 @@ export function MenuHeader({ title, tab }: { title: string; tab: Tab }) {
           <button type="button" className="link-btn" onClick={() => navigate("/snap")}>
             New menu
           </button>
+          <button type="button" className="link-btn" onClick={() => navigate("/recent")}>
+            Recent
+          </button>
           <button type="button" className="tastes-btn" onClick={() => navigate(`/setup/allergies?then=${here}`)}>
             Your tastes
           </button>

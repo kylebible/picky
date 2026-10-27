@@ -69,6 +69,14 @@ export function Welcome() {
         <button type="button" className="btn btn-secondary" onClick={() => navigate("/join")}>
           Joining a friend? Enter their code
         </button>
+        <button
+          type="button"
+          className="link-btn"
+          style={{ justifyContent: "center" }}
+          onClick={() => navigate("/recent")}
+        >
+          Your recent menus
+        </button>
         <p className="small center" style={{ margin: "6px 0 0" }}>
           Picky flags likely allergens, but it can't promise a dish is safe. Always check with your server.
         </p>
