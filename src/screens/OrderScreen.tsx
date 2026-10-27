@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Dish } from "../../shared/menu";
-import { estimate, itemPrice, lineTotal, type OrderItem } from "../../shared/order";
+import { combineOrders, estimate, itemPrice, lineTotal, type OrderItem } from "../../shared/order";
+import type { Member } from "../../shared/split";
 import { MenuHeader } from "../components/MenuHeader";
 import { ShareMoreBar } from "../components/Order";
 import { Plate } from "../components/Plate";
@@ -9,6 +10,7 @@ import { formatPrice } from "../lib/format";
 import { useMenuStore } from "../lib/menuStore";
 import { setTax, setTip, updateItem, useOrder } from "../lib/orderStore";
 import { navigate } from "../lib/router";
+import { joinTable, loadTable, setSameCheck, useTable } from "../lib/tableStore";
 
 const TIPS = [15, 18, 20];
 const money = (n: number, currency: string | null) =>
@@ -17,6 +19,14 @@ const money = (n: number, currency: string | null) =>
 export function OrderScreen() {
   const { menu } = useMenuStore();
   const { items, taxPercent, tipPercent } = useOrder();
+  const table = useTable();
+  useEffect(() => {
+    // Reconnect to a Split it table after a reload, for the shared check.
+    if (table.code) {
+      joinTable(table.code);
+      loadTable(table.code).catch(() => {});
+    }
+  }, [table.code]);
   const [otherTip, setOtherTip] = useState(!TIPS.includes(tipPercent));
   if (!menu) return <Redirect to="/" />;
   const { restaurant_name, currency, dishes } = menu.menu;
@@ -29,6 +39,9 @@ export function OrderScreen() {
   };
   const e = estimate(items, dishes, parseFloat(taxPercent), tipPercent);
   const unpricedNames = e.unpriced.map((i) => dishes[i]?.name).filter(Boolean);
+  // At a Split it table for this menu with someone else: offer the shared check.
+  const me = table.members.find((m) => m.id === table.you);
+  const atTable = me && table.members.some((m) => m.id !== me.id && m.name);
 
   return (
     <main className="screen" style={{ gap: 14 }}>
@@ -131,10 +144,111 @@ export function OrderScreen() {
           </div>
         </>
       )}
+      {atTable && (
+        <SameCheck
+          me={me}
+          members={table.members}
+          orders={{ ...table.orders, [me.id]: items }}
+          dishes={dishes}
+          tax={parseFloat(taxPercent)}
+          tip={tipPercent}
+          fmt={fmt}
+        />
+      )}
       <div className="grow" />
       <ShareMoreBar />
     </main>
   );
+}
+
+/** One check for everyone at the table who's on it, so they can see what they'll pay together. */
+function SameCheck({
+  me,
+  members,
+  orders,
+  dishes,
+  tax,
+  tip,
+  fmt,
+}: {
+  me: Member;
+  members: Member[];
+  orders: Record<string, OrderItem[]>;
+  dishes: Dish[];
+  tax: number;
+  tip: number;
+  fmt: (n: number) => string;
+}) {
+  const others = members.filter((m) => m.id !== me.id && m.name);
+  const onCheck = members.filter((m) => m.sameCheck);
+  const othersOn = onCheck.filter((m) => m.id !== me.id);
+  const combined = combineOrders(onCheck.map((m) => orders[m.id] ?? []));
+  const e = estimate(combined, dishes, tax, tip);
+  const names = (list: Member[]) => listPeople(list.map((m) => m.name || "someone"));
+
+  return (
+    <div className="panel panel-pad" style={{ borderRadius: 20, gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <h2>On the same check?</h2>
+        <div style={{ fontSize: 14, color: "var(--muted)" }}>
+          {me.sameCheck
+            ? othersOn.length
+              ? `You're on one check with ${names(othersOn)}.`
+              : `You're on the check. Once ${others.length === 1 ? others[0].name : "someone else"} joins it, you'll see your total together.`
+            : othersOn.length
+              ? `${names(othersOn)} ${othersOn.length === 1 ? "is" : "are"} on one check. Join to see your total together.`
+              : "Paying together? Put yourself on one check to see your total together."}
+        </div>
+      </div>
+      <button
+        type="button"
+        className={me.sameCheck ? "btn btn-secondary" : "btn btn-outline"}
+        aria-pressed={me.sameCheck}
+        onClick={() => setSameCheck(!me.sameCheck)}
+      >
+        {me.sameCheck
+          ? "Take me off the check"
+          : othersOn.length
+            ? `Join ${names(othersOn)}'s check`
+            : "Put me on one check"}
+      </button>
+      {me.sameCheck && othersOn.length > 0 && (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {combined.map((item) => {
+              const dish = dishes[item.dish];
+              const line = dish && lineTotal(item, dish);
+              return dish ? (
+                <div className="sum-row" key={item.dish} style={{ fontSize: 15 }}>
+                  <span>
+                    {item.quantity > 1 ? `${item.quantity} × ` : ""}
+                    {dish.name}
+                  </span>
+                  <span>{line === null ? "No price" : fmt(line)}</span>
+                </div>
+              ) : null;
+            })}
+          </div>
+          <div className="total-row">
+            <span className="display" style={{ fontSize: 18 }}>
+              Together about
+            </span>
+            <span className="display" style={{ fontSize: 26 }}>
+              {fmt(e.total)}
+            </span>
+          </div>
+          <div className="small" style={{ color: "var(--muted)" }}>
+            With your tax and tip. Shared dishes count once, at full price.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function listPeople(names: string[]) {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 function listNames(names: string[]) {
@@ -170,7 +284,7 @@ function OrderRow({
           onClick={() => updateItem(item.dish, { shared: !item.shared })}
         >
           {item.shared
-            ? `Shared, half of ${price === null ? "the price" : formatPrice(price * item.quantity, currency)}. Undo`
+            ? `Shared${(item.shareWith ?? 2) > 2 ? ` ${item.shareWith} ways` : ", half"} of ${price === null ? "the price" : formatPrice(price * item.quantity, currency)}. Undo`
             : "Just for you. Sharing it?"}
         </button>
         <div className="order-line">

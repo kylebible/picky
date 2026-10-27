@@ -31,6 +31,15 @@ function set(patch: Partial<State>) {
   listeners.forEach((l) => l());
 }
 
+/** For the table connection, which sends this order to a shared check. */
+export function watchOrder(listener: (items: OrderItem[]) => void) {
+  const l = () => listener(state.items);
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+
+export const orderItems = () => state.items;
+
 export function useOrder() {
   return useSyncExternalStore(
     (l) => {
@@ -41,10 +50,10 @@ export function useOrder() {
   );
 }
 
-export function addToOrder(dish: number, { shared = false } = {}) {
+export function addToOrder(dish: number, { shared = false, shareWith }: { shared?: boolean; shareWith?: number } = {}) {
   const existing = state.items.find((i) => i.dish === dish);
   if (existing) return updateItem(dish, { quantity: existing.quantity + 1 });
-  set({ items: [...state.items, { dish, quantity: 1, shared }] });
+  set({ items: [...state.items, { dish, quantity: 1, shared, ...(shared && shareWith ? { shareWith } : {}) }] });
 }
 
 export function updateItem(dish: number, patch: Partial<OrderItem>) {

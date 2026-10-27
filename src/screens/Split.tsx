@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
 import { CATEGORY_LABEL } from "../../shared/categories";
 import type { Dish } from "../../shared/menu";
-import { EMPTY_PROFILE, type Allergen, type Diet } from "../../shared/profile";
-import { almost, deckFor, QUICK_ALLERGIES, TABLE_CODE, type Member } from "../../shared/split";
+import { EMPTY_PROFILE, TASTES, type Allergen, type Diet, type Profile, type Taste } from "../../shared/profile";
+import { TASTE_LABEL } from "../../shared/rank";
+import {
+  almost,
+  deckFor,
+  eaterFrom,
+  eatersOf,
+  MAX_PEOPLE,
+  QUICK_ALLERGIES,
+  TABLE_CODE,
+  type Member,
+} from "../../shared/split";
 import { Plate } from "../components/Plate";
 import { Qr } from "../components/Qr";
 import { SwipeCard } from "../components/SwipeCard";
@@ -14,10 +24,24 @@ import { saveProfile, useProfile } from "../lib/profileStore";
 import { navigate } from "../lib/router";
 import { createTable, dismissMatch, joinTable, loadTable, swipe, useTable } from "../lib/tableStore";
 
-// Split it: the host shows a QR code, the tablemate joins in their browser,
-// both swipe on the same menu, and dishes you both like become matches.
+// Split it: the host shows a QR code, tablemates join in their browser,
+// everyone swipes on the same menu, and dishes everyone who can have them
+// likes become matches.
 
 const initial = (name: string) => (name.trim()[0] ?? "?").toUpperCase();
+
+/** "Sam", "Sam and Alex", "Sam, Alex and Jo". */
+export function listNames(names: string[]) {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** "You and Sam", "You, Sam and Alex", or "You and 4 others" for a big table. */
+function youAnd(others: Member[]) {
+  if (others.length === 0) return "Just you";
+  if (others.length > 3) return `You and ${others.length} others`;
+  return `You${others.length > 1 ? ", " : " and "}${listNames(others.map((m) => m.name || "someone"))}`;
+}
 
 function Avatars({ members, size = 32 }: { members: Member[]; size?: number }) {
   return (
@@ -41,10 +65,10 @@ function Avatars({ members, size = 32 }: { members: Member[]; size?: number }) {
   );
 }
 
-/** Half the price, as "about $8 each", or null when there's no price. */
-function each(dish: Dish, currency: string | null) {
+/** The price split between the people sharing, as "about $8 each", or null when there's no price. */
+function each(dish: Dish, currency: string | null, people: number) {
   if (dish.price_status !== "listed" || dish.price === null) return null;
-  return `about ${formatPrice(Math.round(dish.price * 50) / 100, currency)} each`;
+  return `about ${formatPrice(Math.round((dish.price * 100) / Math.max(2, people)) / 100, currency)} each`;
 }
 
 /** Host: asks for a first name once, then makes a table and shows its code. */
@@ -64,8 +88,7 @@ export function SplitStart() {
       const code = await createTable({
         menu: menu.menu,
         name: firstName,
-        allergies: profile.allergies,
-        diet: profile.diet,
+        ...eaterFrom(profile),
       });
       navigate(`/split/${code}`, { replace: true });
     } catch (err) {
@@ -97,7 +120,7 @@ export function SplitStart() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <h1>Split some dishes</h1>
-        <p className="lede">Your tablemate will see your first name when they join.</p>
+        <p className="lede">Your tablemates will see your first name when they join.</p>
       </div>
       <form
         style={{ display: "flex", flexDirection: "column", gap: 18 }}
@@ -129,17 +152,21 @@ export function SplitStart() {
   );
 }
 
-/** Host: the QR code and table code, waiting for the tablemate. */
+/** The QR code and table code, waiting for a tablemate, or for someone else to join. */
 export function Share({ code }: { code: string }) {
   const table = useTable();
   const [copied, setCopied] = useState(false);
   const link = `${location.origin}/t/${code}`;
-  const tablemate = table.members.find((m) => !m.host && m.name);
+  const joined = table.members.filter((m) => m.name).length;
+  // Opened to add someone else: stay here until they arrive, then go back to swiping.
+  const [joinedAtOpen, setJoinedAtOpen] = useState<number | null>(null);
 
   useEffect(() => joinTable(code), [code]);
   useEffect(() => {
-    if (tablemate) navigate(`/split/${code}/swipe`, { replace: true });
-  }, [tablemate, code]);
+    if (table.you && joinedAtOpen === null) setJoinedAtOpen(Math.max(1, joined));
+    else if (joinedAtOpen !== null && joined > joinedAtOpen) navigate(`/split/${code}/swipe`, { replace: true });
+  }, [table.you, joined, joinedAtOpen, code]);
+  const adding = joinedAtOpen !== null && joinedAtOpen > 1;
 
   async function sendLink() {
     const text = "Swipe on the menu with me on Picky";
@@ -159,7 +186,7 @@ export function Share({ code }: { code: string }) {
         <BackButton fallback="/picks" />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <h1>Have your tablemate scan this</h1>
+        <h1>{adding ? "Have the next person scan this" : "Have your tablemate scan this"}</h1>
         <p className="lede">It opens in their phone's browser. Nothing to download, no account needed.</p>
       </div>
       <div className="panel qr-card">
@@ -178,9 +205,20 @@ export function Share({ code }: { code: string }) {
         <div style={{ fontSize: 15, lineHeight: 1.35 }}>
           {table.connection === "closed"
             ? "Reconnecting to your table..."
-            : "Waiting for them to join. You'll both start swiping as soon as they do."}
+            : adding
+              ? "Anyone who joins gets their own cards. Up to " + MAX_PEOPLE + " people can sit at a table."
+              : "Waiting for them to join. You'll both start swiping as soon as they do."}
         </div>
       </div>
+      {adding && (
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => navigate(`/split/${code}/swipe`, { replace: true })}
+        >
+          Back to swiping
+        </button>
+      )}
     </main>
   );
 }
@@ -238,7 +276,17 @@ export function JoinCode() {
   );
 }
 
-/** Tablemate: first name and a quick allergy list, no account. */
+/** Their tastes with exactly these marked "nope". */
+function nopedTastes(tastes: Profile["tastes"], nopes: Taste[]): Profile["tastes"] {
+  const next = { ...tastes };
+  for (const t of TASTES) {
+    if (nopes.includes(t)) next[t] = "nope";
+    else if (next[t] === "nope") delete next[t];
+  }
+  return next;
+}
+
+/** Tablemate: first name, a quick allergy list and dislikes, no account. */
 export function Join({ code }: { code: string }) {
   const profile = useProfile();
   const table = useTable();
@@ -252,6 +300,7 @@ export function Join({ code }: { code: string }) {
     ).map((q) => q.label),
   );
   const [showMore, setShowMore] = useState(false);
+  const [nopes, setNopes] = useState<Taste[]>(() => TASTES.filter((t) => profile?.tastes[t] === "nope"));
 
   useEffect(() => {
     loadTable(code)
@@ -288,13 +337,15 @@ export function Join({ code }: { code: string }) {
     const chosen = QUICK_ALLERGIES.filter((q) => picked.includes(q.label));
     const allergies = [...new Set(chosen.flatMap((q) => q.allergens))] as Allergen[];
     const diet: Diet = chosen.find((q) => q.diet)?.diet ?? profile?.diet ?? "anything";
-    saveProfile({
+    const saved = {
       ...(profile ?? EMPTY_PROFILE),
       name: firstName,
       allergies: [...new Set([...(profile?.allergies ?? []), ...allergies])],
       diet,
-    });
-    joinTable(code, { type: "hello", name: firstName, allergies, diet });
+      tastes: nopedTastes(profile?.tastes ?? {}, nopes),
+    };
+    saveProfile(saved);
+    joinTable(code, { type: "hello", name: firstName, ...eaterFrom(saved), allergies });
     navigate(`/split/${code}/swipe`, { replace: true });
   }
 
@@ -311,12 +362,16 @@ export function Join({ code }: { code: string }) {
               {info.hostName} wants to split some dishes{info.restaurant ? ` at ${info.restaurant}` : ""}
             </h1>
           </div>
-          {info.full && <div className="error-box">Two people are already at this table, so you can't join it.</div>}
+          {info.full && (
+            <div className="error-box">{MAX_PEOPLE} people are already at this table, so you can't join it.</div>
+          )}
         </>
       ) : (
         <h1>Finding the table...</h1>
       )}
-      <p className="lede">You'll both swipe through the menu. When you both like a dish, it's a match.</p>
+      <p className="lede">
+        You'll swipe through the menu together. When everyone who can eat a dish likes it, it's a match.
+      </p>
       <div className="field">
         <label htmlFor="tm-name">Your first name</label>
         <input
@@ -332,7 +387,7 @@ export function Join({ code }: { code: string }) {
       <section className="panel panel-pad" style={{ padding: 16 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <h2>Anything you can't eat?</h2>
-          <div style={{ fontSize: 14, color: "var(--muted)" }}>Tap any that apply, so we don't match you on them.</div>
+          <div style={{ fontSize: 14, color: "var(--muted)" }}>Tap any that apply, so nobody sees those dishes.</div>
         </div>
         <div className="toggles grid3">
           {choices.map((q) => (
@@ -356,6 +411,26 @@ export function Join({ code }: { code: string }) {
           )}
         </div>
       </section>
+      <section className="panel panel-pad" style={{ padding: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <h2>Anything you don't like?</h2>
+          <div style={{ fontSize: 14, color: "var(--muted)" }}>We'll skip those too.</div>
+        </div>
+        <div className="toggles grid3">
+          {TASTES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="toggle"
+              style={{ minHeight: 48 }}
+              aria-pressed={nopes.includes(t)}
+              onClick={() => setNopes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]))}
+            >
+              {TASTE_LABEL[t]}
+            </button>
+          ))}
+        </div>
+      </section>
       <div className="grow" />
       <button type="button" className="btn btn-primary" disabled={!info || info.full || !name.trim()} onClick={start}>
         Start swiping
@@ -367,7 +442,7 @@ export function Join({ code }: { code: string }) {
   );
 }
 
-/** Both: one dish at a time, "Not for me" or "I'd share this". */
+/** Everyone: one dish at a time, "Not for me" or "I'd share this". */
 export function Swipe({ code }: { code: string }) {
   const table = useTable();
   useEffect(() => {
@@ -377,7 +452,6 @@ export function Swipe({ code }: { code: string }) {
 
   if (table.connection === "gone") return <TableGone />;
   const me = table.members.find((m) => m.id === table.you);
-  const them = table.members.find((m) => m.id !== table.you);
   const info = table.code === code ? table.info : null;
   if (!info || !me) {
     return (
@@ -389,24 +463,43 @@ export function Swipe({ code }: { code: string }) {
   }
 
   const { dishes, currency } = info.menu;
-  const deck = deckFor(dishes, me);
+  const members = table.members;
+  const others = members.filter((m) => m.id !== me.id && m.name);
+  const deck = deckFor(dishes, me, members);
   const mine = new Set(table.swipes.filter((s) => s.userId === me.id).map((s) => s.dishId));
   const left = deck.filter((id) => !mine.has(id));
   const current = left[0];
   const dish = current !== undefined ? dishes[Number(current)] : null;
-  const latest = table.latestMatch !== null ? dishes[Number(table.latestMatch)] : null;
-  const suitsThem = dish && them ? deckFor([dish], them).length === 1 : true;
-  const split = dish && each(dish, currency);
+  const myMatches = table.matches.filter(
+    (id) => dishes[Number(id)] && eatersOf(dishes[Number(id)], members).includes(me),
+  );
+  const latest =
+    table.latestMatch !== null && myMatches.includes(table.latestMatch) ? dishes[Number(table.latestMatch)] : null;
+  const latestWith = latest ? eatersOf(latest, others) : [];
+  const stillSwiping = others.filter(
+    (m) => table.swipes.filter((s) => s.userId === m.id).length < deckFor(dishes, m, members).length,
+  );
+
+  let note: string | null = null;
+  if (dish && others.length) {
+    const sharers = eatersOf(dish, others);
+    const split = each(dish, currency, sharers.length + 1);
+    const who =
+      others.length === 1
+        ? "Works for both of you"
+        : sharers.length === others.length
+          ? "Works for everyone"
+          : `For you and ${listNames(sharers.map((m) => m.name))}`;
+    note = `${who}${split ? `, ${split}` : ""}.`;
+  }
 
   return (
     <main className="screen" style={{ gap: 14 }}>
       <div className="topbar">
         <BackButton fallback="/picks" label="Stop swiping" />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Avatars members={table.members} />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>
-            {them?.name ? `You and ${them.name}` : "Waiting for them"}
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <Avatars members={members} />
+          <span style={{ fontWeight: 700, fontSize: 15 }}>{others.length ? youAnd(others) : "Waiting for them"}</span>
         </div>
         <div style={{ fontSize: 14, color: "var(--muted-strong)", minWidth: 44, textAlign: "right" }}>
           {Math.min(deck.length - left.length + 1, deck.length)} of {deck.length}
@@ -433,11 +526,7 @@ export function Swipe({ code }: { code: string }) {
               <div style={{ fontSize: 15, color: "var(--muted)", lineHeight: 1.4 }}>
                 {[
                   dish.description && (/[.!?]$/.test(dish.description) ? dish.description : `${dish.description}.`),
-                  them?.name && !suitsThem
-                    ? `${them.name} might not be able to eat this.`
-                    : them?.name
-                      ? `Works for both of you${split ? `, ${split}` : ""}.`
-                      : null,
+                  note,
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -462,11 +551,13 @@ export function Swipe({ code }: { code: string }) {
         <div className="panel panel-pad" style={{ padding: 20 }}>
           <h1 style={{ fontSize: 26 }}>That's every dish</h1>
           <p className="lede">
-            {them?.name
-              ? table.swipes.filter((s) => s.userId === them.id).length < deckFor(dishes, them).length
-                ? `${them.name} is still swiping. Matches show up here as they happen.`
-                : `You've both finished.`
-              : "Your tablemate hasn't joined yet."}
+            {others.length === 0
+              ? "Your tablemate hasn't joined yet."
+              : stillSwiping.length
+                ? `${listNames(stillSwiping.map((m) => m.name))} ${stillSwiping.length === 1 ? "is" : "are"} still swiping. Matches show up here as they happen.`
+                : others.length === 1
+                  ? "You've both finished."
+                  : "Everyone's finished."}
           </p>
           <button
             type="button"
@@ -494,30 +585,44 @@ export function Swipe({ code }: { code: string }) {
             <path d="M9 18l5 5 11-12" stroke="#7A1F2B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <div style={{ fontSize: 15, lineHeight: 1.3 }}>
-            <b>You both want the {latest.name}.</b>
+            <b>
+              {latestWith.length <= 1
+                ? `You ${latestWith.length ? `and ${latestWith[0].name} ` : ""}both want the ${latest.name}.`
+                : `${youAnd(latestWith)} all want the ${latest.name}.`}
+            </b>
             <br />
-            {table.matches.length === 1
+            {myMatches.length === 1
               ? "That's your first match. See it"
-              : `That's ${table.matches.length} dishes you agree on. See them`}
+              : `That's ${myMatches.length} dishes you agree on. See them`}
           </div>
         </a>
       ) : (
-        table.matches.length > 0 && (
+        myMatches.length > 0 && (
           <button
             type="button"
             className="link-btn"
             style={{ alignSelf: "center" }}
             onClick={() => navigate(`/split/${code}/matches`)}
           >
-            See your {table.matches.length} {table.matches.length === 1 ? "match" : "matches"}
+            See your {myMatches.length} {myMatches.length === 1 ? "match" : "matches"}
           </button>
         )
+      )}
+      {members.length < MAX_PEOPLE && (
+        <button
+          type="button"
+          className="link-btn"
+          style={{ alignSelf: "center" }}
+          onClick={() => navigate(`/split/${code}`)}
+        >
+          Add someone to the table
+        </button>
       )}
     </main>
   );
 }
 
-/** Both: the dishes you agree on, with one tap to add each to the order. */
+/** Everyone: the dishes you agree on, with one tap to add each to the order. */
 export function Matches({ code }: { code: string }) {
   const table = useTable();
   const { items } = useOrder();
@@ -528,7 +633,6 @@ export function Matches({ code }: { code: string }) {
 
   const info = table.code === code ? table.info : null;
   const me = table.members.find((m) => m.id === table.you);
-  const them = table.members.find((m) => m.id !== table.you);
   if (table.connection === "gone") return <TableGone />;
   if (!info || !me) {
     return (
@@ -540,33 +644,53 @@ export function Matches({ code }: { code: string }) {
   }
 
   const { dishes, currency } = info.menu;
-  const theirName = them?.name || "your tablemate";
-  const nearly = them ? almost(table.swipes, me.id, them.id).map((id) => dishes[Number(id)]?.name) : [];
-  const left = deckFor(dishes, me).filter((id) => !table.swipes.some((s) => s.userId === me.id && s.dishId === id));
+  const members = table.members;
+  const others = members.filter((m) => m.id !== me.id && m.name);
+  const nameOf = (id: string) => members.find((m) => m.id === id)?.name || "someone";
+  const group = others.length > 1;
+  const matches = table.matches.filter(
+    (id) => dishes[Number(id)] && eatersOf(dishes[Number(id)], members).includes(me),
+  );
+  const nearly = almost(table.swipes, me.id).filter((a) => dishes[Number(a.dishId)]);
+  const left = deckFor(dishes, me, members).filter(
+    (id) => !table.swipes.some((s) => s.userId === me.id && s.dishId === id),
+  );
+  const together = group ? "Your table" : `You and ${others[0]?.name || "your tablemate"}`;
 
   return (
     <main className="screen" style={{ gap: 16 }}>
       <div className="topbar">
         <BackButton fallback={`/split/${code}/swipe`} label="Back to swiping" />
-        <Avatars members={table.members} size={36} />
+        <Avatars members={members} size={36} />
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <h1>
-          {table.matches.length === 0
-            ? `No matches with ${theirName} yet`
-            : `You and ${theirName} agree on ${table.matches.length} ${table.matches.length === 1 ? "dish" : "dishes"}`}
+          {matches.length === 0
+            ? `No matches yet`
+            : `${together} ${group ? "agrees" : "agree"} on ${matches.length} ${matches.length === 1 ? "dish" : "dishes"}`}
         </h1>
-        <p className="lede">Shared dishes count as half in your order.</p>
+        <p className="lede">
+          {group
+            ? "A shared dish is split between the people who can have it."
+            : "Shared dishes count as half in your order."}
+        </p>
       </div>
 
-      {table.matches.length > 0 && (
+      {matches.length > 0 && (
         <div className="panel">
-          {table.matches.map((id) => {
+          {matches.map((id) => {
             const index = Number(id);
             const dish = dishes[index];
-            if (!dish) return null;
+            const sharers = eatersOf(dish, members);
             const inOrder = items.some((i) => i.dish === index);
-            const split = each(dish, currency);
+            const split = each(dish, currency, sharers.length);
+            const price =
+              split && dish.price !== null
+                ? `${formatPrice(dish.price, currency)}, ${split}`
+                : dish.price_status === "market_price"
+                  ? "Market price"
+                  : "No price listed";
+            const without = members.filter((m) => m.name && !sharers.includes(m));
             return (
               <div className="row" key={id} style={{ cursor: "default", padding: "12px 14px 12px 10px" }}>
                 <Plate category={dish.category} size={52} />
@@ -575,11 +699,8 @@ export function Matches({ code }: { code: string }) {
                     {dish.name}
                   </div>
                   <div className="row-sub">
-                    {split && dish.price !== null
-                      ? `${formatPrice(dish.price, currency)}, ${split}`
-                      : dish.price_status === "market_price"
-                        ? "Market price"
-                        : "No price listed"}
+                    {price}
+                    {group && without.length > 0 ? `. Not for ${listNames(without.map((m) => m.name))}` : ""}
                   </div>
                 </div>
                 {inOrder ? (
@@ -589,7 +710,7 @@ export function Matches({ code }: { code: string }) {
                     type="button"
                     className="btn btn-outline"
                     style={{ height: 44, padding: "0 14px" }}
-                    onClick={() => addToOrder(index, { shared: true })}
+                    onClick={() => addToOrder(index, { shared: true, shareWith: sharers.length })}
                   >
                     Add
                   </button>
@@ -602,8 +723,20 @@ export function Matches({ code }: { code: string }) {
 
       {nearly.length > 0 && (
         <div className="panel panel-pad" style={{ borderRadius: 18, gap: 4 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>Almost: you liked these, {theirName} passed</div>
-          <div style={{ fontSize: 14, color: "var(--muted)" }}>{nearly.join(", ")}</div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>
+            {group
+              ? "Almost: you liked these, someone passed"
+              : `Almost: you liked these, ${others[0]?.name || "they"} passed`}
+          </div>
+          <div style={{ fontSize: 14, color: "var(--muted)" }}>
+            {nearly
+              .map((a) =>
+                group
+                  ? `${dishes[Number(a.dishId)].name} (${listNames(a.passedBy.map(nameOf))})`
+                  : dishes[Number(a.dishId)].name,
+              )
+              .join(", ")}
+          </div>
         </div>
       )}
 
