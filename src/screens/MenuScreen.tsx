@@ -3,6 +3,7 @@ import { Plate } from "../components/Plate";
 import { EMPTY_PROFILE } from "../../shared/profile";
 import { scoreDish } from "../../shared/rank";
 import { MenuHeader } from "../components/MenuHeader";
+import { OrderBar } from "../components/Order";
 import { PriceCell, Redirect, WarnIcon } from "../components/ui";
 import { useProfile } from "../lib/profileStore";
 import { allergenWarning } from "../lib/reasons";
@@ -112,6 +113,7 @@ export function MenuScreen() {
       <p className="small center" style={{ margin: 0 }}>
         Allergens and ingredients marked as our guess aren't on the menu. Always check with your server.
       </p>
+      <OrderBar />
     </main>
   );
 }

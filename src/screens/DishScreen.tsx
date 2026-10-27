@@ -1,4 +1,5 @@
 import { CATEGORY_LABEL } from "../../shared/categories";
+import { AddButton } from "../components/Order";
 import { Plate } from "../components/Plate";
 import { BackButton, PriceCell, Redirect, WarnIcon } from "../components/ui";
 import { ALLERGEN_LABEL, capitalize, formatPrice } from "../lib/format";
@@ -121,6 +122,8 @@ export function DishScreen({ index }: { index: number }) {
       <button type="button" className="link-btn" style={{ alignSelf: "center" }} onClick={reread}>
         This looks wrong
       </button>
+      <div className="grow" />
+      <AddButton dish={index} big />
     </main>
   );
 }
