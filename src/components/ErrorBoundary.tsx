@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from "react";
-import { reportError, startOver } from "../lib/report";
+import { reportError, startOver } from "../lib/telemetry";
 
 /** Shows what broke instead of a blank screen, and reports it. */
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {

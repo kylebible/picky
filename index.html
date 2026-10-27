@@ -25,7 +25,10 @@
             "<p>Check your connection, then reload.</p>" +
             '<button onclick="location.reload()" style="font-size:16px;padding:10px 16px">Reload</button></main>';
           try {
-            navigator.sendBeacon("/api/client-error", JSON.stringify({ where: "boot", path: location.pathname, userAgent: navigator.userAgent }));
+            navigator.sendBeacon(
+              "/api/events",
+              JSON.stringify({ session_id: "boot", events: [{ kind: "error", name: "boot", path: location.pathname, data: {} }] }),
+            );
           } catch (e) {}
         }
       }, 8000);

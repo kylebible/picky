@@ -1,10 +1,14 @@
 import { useSyncExternalStore } from "react";
+import { track } from "./telemetry";
 
 // A tiny pathname router. Screens are few, and the Split it join link needs a
 // real URL (/t/1234), so this uses the History API rather than a library.
 
 const listeners = new Set<() => void>();
-const notify = () => listeners.forEach((l) => l());
+const notify = () => {
+  track("page");
+  listeners.forEach((l) => l());
+};
 window.addEventListener("popstate", notify);
 
 export function navigate(path: string, { replace = false } = {}) {

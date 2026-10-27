@@ -31,10 +31,52 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ ok: true }));
 
-// Crashes reported by the app, so they show up in Workers Logs.
-app.post("/client-error", async (c) => {
-  const report = (await c.req.text()).slice(0, 4000);
-  console.error("client error", report);
+const EventsSchema = z.object({
+  session_id: z.string().max(40),
+  app_version: z.string().max(40).optional(),
+  events: z
+    .array(
+      z.object({
+        kind: z.enum(["event", "error"]),
+        name: z.string().max(64),
+        path: z.string().max(200).optional(),
+        at: z.string().max(40).optional(),
+        data: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .max(50),
+});
+
+// Frontend observability: the app batches errors and key steps here, and they
+// land in D1's client_events table for debugging.
+app.post("/events", async (c) => {
+  const parsed = EventsSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.body(null, 400);
+  const { session_id, app_version, events } = parsed.data;
+  const userAgent = c.req.header("user-agent")?.slice(0, 300) ?? null;
+  const insert = c.env.DB.prepare(
+    `INSERT INTO client_events (created_at, device_id, session_id, kind, name, path, data, app_version, user_agent)
+     VALUES (coalesce(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const statements = events.map((e) => {
+    if (e.kind === "error") console.error("client error", e.name, JSON.stringify(e.data ?? {}).slice(0, 2000));
+    return insert.bind(
+      e.at ?? null,
+      c.get("userId"),
+      session_id,
+      e.kind,
+      e.name,
+      e.path ?? null,
+      JSON.stringify(e.data ?? {}).slice(0, 8000),
+      app_version ?? null,
+      userAgent,
+    );
+  });
+  // Keep two weeks; pruning on about 1 in 50 batches is plenty at this volume.
+  if (Math.random() < 0.02) {
+    statements.push(c.env.DB.prepare("DELETE FROM client_events WHERE created_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-14 days')"));
+  }
+  if (statements.length) await c.env.DB.batch(statements);
   return c.body(null, 204);
 });
 
