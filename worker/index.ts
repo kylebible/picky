@@ -31,6 +31,13 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ ok: true }));
 
+// Crashes reported by the app, so they show up in Workers Logs.
+app.post("/client-error", async (c) => {
+  const report = (await c.req.text()).slice(0, 4000);
+  console.error("client error", report);
+  return c.body(null, 204);
+});
+
 // Bad uploads get a plain 400. Otherwise the reply streams newline-delimited
 // MenuStreamEvents, so the phone can show dishes while the menu is still being read.
 app.post("/parse-menu", async (c) => {

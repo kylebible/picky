@@ -15,6 +15,21 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // If the app's script fails to load or run, show something instead of a blank page.
+      setTimeout(function () {
+        var root = document.getElementById("root");
+        if (root && !root.hasChildNodes()) {
+          root.innerHTML =
+            '<main style="padding:24px;font-family:system-ui;line-height:1.4"><h1>Picky didn\'t load</h1>' +
+            "<p>Check your connection, then reload.</p>" +
+            '<button onclick="location.reload()" style="font-size:16px;padding:10px 16px">Reload</button></main>';
+          try {
+            navigator.sendBeacon("/api/client-error", JSON.stringify({ where: "boot", path: location.pathname, userAgent: navigator.userAgent }));
+          } catch (e) {}
+        }
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
