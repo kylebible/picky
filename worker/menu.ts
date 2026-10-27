@@ -15,11 +15,12 @@ Rules:
 - Include every orderable item: starters, mains, sides, desserts and drinks. Skip headings, taglines and contact details.
 - section is the menu heading the dish sits under.
 - category: the closest kind of dish from the allowed list, judged from the dish itself rather than the section (a crab cake under Starters is shellfish). Use "other" only when nothing fits.
-- price: the number printed for the dish, without the currency symbol. Set price_status to "listed" when a number is printed, "market_price" when the menu says MP, market price, seasonal price or ask your server, and "not_listed" when the menu shows no price for it, and "unreadable" when a price is printed but you can't make out the number. price is null unless price_status is "listed".
+- price: the number printed for the dish, without the currency symbol. Copy each digit exactly as printed and never guess or round: if you can't make out every digit, use "unreadable". Calorie counts such as "(cal 910)" are not prices; the price is usually the number right after them. Set price_status to "listed" when a number is printed, "market_price" when the menu says MP, market price, seasonal price or ask your server, and "not_listed" when the menu shows no price for it, and "unreadable" when a price is printed but you can't make out the number. price is null unless price_status is "listed".
 - ingredients: mark each one "stated" when the menu text names it, or "likely" when you infer it from the dish (for example garlic in garlic bread is stated, flour is likely).
 - allergens: only from the allowed list, each marked "stated" or "likely" the same way. Prefer listing a likely allergen over leaving it out.
 - diet_tags: short lowercase tags such as vegetarian, vegan, gluten-free, pescatarian, spicy, when the menu marks them or they clearly apply.
-- options: add-ons and choices printed with the dish, with price_delta when an upcharge is printed.
+- Sizes: when a dish lists several sizes with their own prices (for example "Big 6.29, Real Big 8.99" or "cup / bowl"), price is the smallest size's price, and each larger size is an option named after the size with price_delta = its price minus the smallest price.
+- options: add-ons and choices printed with the dish (such as "Add chicken 3.79"), with price_delta when an upcharge is printed. An add-on's price never replaces the dish's own price.
 - currency: ISO code inferred from symbols or location, or null if unclear.
 - Copy names as printed. If a menu is not in English, keep the original name and translate the description into English.`;
 
