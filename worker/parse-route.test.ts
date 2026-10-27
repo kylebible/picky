@@ -16,13 +16,16 @@ vi.mock("./menu", async (original) => {
 });
 
 const { default: app } = await import("./index");
+const saved: { sql: string; args: unknown[] }[] = [];
 
 function post(files: File[]) {
   const form = new FormData();
   files.forEach((f) => form.append("photos", f));
   const waits: Promise<unknown>[] = [];
   const ctx = { waitUntil: (p: Promise<unknown>) => waits.push(p), passThroughOnException() {}, props: {} };
-  return app.fetch(new Request("http://x/api/parse-menu", { method: "POST", body: form }), {} as Env, ctx as never);
+    const run = async () => ({});
+  const DB = { prepare: (sql: string) => ({ bind: (...args: unknown[]) => (saved.push({ sql, args }), { run }) }) };
+  return app.fetch(new Request("http://x/api/parse-menu", { method: "POST", body: form }), { DB } as never, ctx as never);
 }
 
 describe("POST /api/parse-menu", () => {
@@ -31,6 +34,9 @@ describe("POST /api/parse-menu", () => {
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
     const events = (await res.text()).trim().split("\n").map((l) => JSON.parse(l).type);
     expect(events).toEqual(["menu", "checking", "done"]);
+    await new Promise((r) => setTimeout(r, 0));
+    const read = saved.find((s) => s.sql.includes("INSERT INTO menu_reads"));
+    expect(read?.args[3]).toBe("done");
   });
 
   it("rejects a request with no photos before streaming", async () => {

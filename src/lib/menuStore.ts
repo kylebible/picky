@@ -3,6 +3,7 @@ import type { Dish, Menu, MenuStreamEvent, ParsedMenuResponse } from "../../shar
 import { remapOrderItems } from "./orderStore";
 import { release, type MenuPhoto } from "./photos";
 import { forgetTable } from "./tableStore";
+import { reportError, track } from "./telemetry";
 
 // The current menu and the read in progress. The parsed menu is kept in
 // localStorage so a reload doesn't lose it; the photos only live in memory.
@@ -93,11 +94,16 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
   controller = new AbortController();
   const { signal } = controller;
   if (photos !== state.photos) release(state.photos);
+  const startedAt = Date.now();
+  const ms = () => Date.now() - startedAt;
+  let stage = "upload";
+  let dishCount = 0;
+  track("read_start", { pages: photos.length, strong, bytes: photos.reduce((n, p) => n + p.blob.size, 0) });
   set({
     photos,
     reading: {
       status: "reading",
-      startedAt: Date.now(),
+      startedAt,
       pages: photos.length,
       dishes: [],
       currency: null,
@@ -111,6 +117,7 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
     const res = await fetch(`/api/parse-menu${strong ? "?strong=1" : ""}`, {
       method: "POST",
       body: form,
+      headers: { "x-picky-version": __APP_VERSION__ },
       signal,
     }).catch((err) => {
       if (signal.aborted) throw err;
@@ -121,13 +128,19 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
       throw new ReadError(body.error ?? "Something went wrong reading the menu.", `HTTP ${res.status}`);
     }
     // Assigned inside the callback, so TypeScript is told the type rather than inferring null.
+    stage = "quick_reads";
     let received = null as ParsedMenuResponse | null;
     await readEvents(res.body, (event) => {
       if (signal.aborted) return;
       if (event.type === "menu") updateReading({ currency: event.currency });
-      else if (event.type === "dish" && state.reading.status === "reading")
+      else if (event.type === "dish" && state.reading.status === "reading") {
+        if (++dishCount === 1) track("read_first_dish", { ms: ms() });
         updateReading({ dishes: [...state.reading.dishes, event.dish] });
-      else if (event.type === "checking") updateReading({ checking: true });
+      } else if (event.type === "checking") {
+        stage = "careful_read";
+        track("read_checking", { ms: ms(), dishes: dishCount });
+        updateReading({ checking: true });
+      }
       else if (event.type === "done") received = event.result;
       else if (event.type === "error") throw new ReadError(event.message, event.detail);
     }).catch((err) => {
@@ -136,6 +149,14 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
     });
     const menu = received;
     if (!menu) throw new ReadError("The menu read stopped before it finished. Try again.");
+    stage = "save";
+    track("read_done", {
+      ms: ms(),
+      dishes: menu.menu.dishes.length,
+      model: menu.model,
+      retried: menu.retried,
+      usage: menu.usage,
+    });
     // A re-read of the same photos keeps the order, matching dishes by name;
     // a new menu starts a new one.
     const before = strong ? (state.menu?.menu.dishes ?? []) : [];
@@ -148,8 +169,18 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
     set({ reading: { status: "idle" } });
     return true;
   } catch (err) {
-    if (signal.aborted) return false;
+    if (signal.aborted) {
+      track("read_cancel", { ms: ms(), stage, dishes: dishCount });
+      return false;
+    }
     const message = err instanceof Error ? err.message : String(err);
+    reportError(err, "read_error", {
+      ms: ms(),
+      stage,
+      dishes: dishCount,
+      detail: err instanceof ReadError ? err.detail : undefined,
+      visibility: document.visibilityState,
+    });
     set({ reading: { status: "error", message, detail: err instanceof ReadError ? err.detail : undefined } });
     return false;
   }
