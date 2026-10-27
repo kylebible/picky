@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ALLERGENS, MenuSchema, type MenuStreamEvent } from "../shared/menu";
 import { DIETS } from "../shared/profile";
 import { TABLE_CODE } from "../shared/split";
-import { MAX_PHOTOS, MenuParseError, parseMenu, toPhoto } from "./menu";
+import { MAX_PHOTOS, MenuParseError, newTrace, parseMenu, toPhoto } from "./menu";
 
 export { SplitSession } from "./split-session";
 
@@ -103,18 +103,51 @@ app.post("/parse-menu", async (c) => {
   };
   // A careful read can go minutes without a dish to send; iOS Safari drops idle fetches.
   const ping = setInterval(() => send({ type: "ping" }), 5000);
+  const trace = newTrace();
+  const started = Date.now();
+  const save = async (outcome: "done" | "error", result?: { model: string; retried: boolean }, error?: string) => {
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO menu_reads (device_id, strong, pages, outcome, error, ms, final_model, retried, reasons, reads, app_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          c.get("userId"),
+          trace.strong ? 1 : 0,
+          photos.length,
+          outcome,
+          error ?? null,
+          Date.now() - started,
+          result?.model ?? null,
+          result ? (result.retried ? 1 : 0) : null,
+          JSON.stringify(trace.reasons),
+          JSON.stringify(trace.reads),
+          c.req.header("x-picky-version") ?? null,
+        )
+        .run();
+    } catch (err) {
+      console.error("saving menu read failed", err);
+    }
+  };
   c.executionCtx.waitUntil(
-    parseMenu(c.env, photos, c.req.query("strong") === "1", send)
-      .then((result) => send({ type: "done", result }))
-      .catch((err) => {
-        if (!(err instanceof MenuParseError)) console.error("parse-menu failed", err);
-        const known = err instanceof MenuParseError;
-        send({
-          type: "error",
-          message: known ? err.message : "Something went wrong reading the menu.",
-          detail: known ? undefined : String(err instanceof Error ? err.message : err).slice(0, 300),
-        });
-      })
+    parseMenu(c.env, photos, c.req.query("strong") === "1", send, trace)
+      .then(
+        async (result) => {
+          send({ type: "done", result });
+          await save("done", result);
+        },
+        async (err) => {
+          if (!(err instanceof MenuParseError)) console.error("parse-menu failed", err);
+          const known = err instanceof MenuParseError;
+          const reason = String(err instanceof Error ? err.message : err).slice(0, 300);
+          send({
+            type: "error",
+            message: known ? err.message : "Something went wrong reading the menu.",
+            detail: known ? undefined : reason,
+          });
+          await save("error", undefined, reason);
+        },
+      )
       .finally(() => {
         clearInterval(ping);
         writer.close().catch(() => {});

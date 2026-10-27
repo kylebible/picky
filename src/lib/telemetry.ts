@@ -2,8 +2,6 @@
 // stored in D1 (client_events), where Claude can query them. Never send
 // allergies, profile details or menu text here, only names, counts and timings.
 
-declare const __APP_VERSION__: string;
-
 type ClientEvent = {
   kind: "event" | "error";
   name: string;

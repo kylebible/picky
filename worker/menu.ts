@@ -157,14 +157,42 @@ async function readWith(
     ],
     });
   if (onText) stream.on("text", onText);
+  const started = Date.now();
   const response = await stream.finalMessage().catch((err) => {
     // Output that was cut off or doesn't fit the schema counts as a failed read; API errors still throw.
     if (err instanceof Anthropic.APIError) throw err;
     return null;
   });
-  if (!response) return { menu: null, usage: { input_tokens: 0, output_tokens: 0 } };
+  const ms = Date.now() - started;
+  if (!response) return { menu: null, usage: { input_tokens: 0, output_tokens: 0 }, ms, stop_reason: "invalid_output" };
   const menu = response.stop_reason === "end_turn" ? response.parsed_output : null;
-  return { menu, usage: response.usage };
+  return { menu, usage: response.usage, ms, stop_reason: response.stop_reason };
+}
+
+type Read = Awaited<ReturnType<typeof readWith>>;
+
+/** What each model read, kept in D1 (menu_reads) so scans can be reviewed later. Never includes photos. */
+export type ReadTrace = {
+  strong: boolean;
+  pages: number;
+  reasons: string[];
+  reads: {
+    role: "low" | "medium" | "careful";
+    model: string;
+    effort: Effort;
+    ms: number;
+    stop_reason: string | null;
+    input_tokens: number;
+    output_tokens: number;
+    menu: Menu | null;
+  }[];
+};
+
+export const newTrace = (): ReadTrace => ({ strong: false, pages: 0, reasons: [], reads: [] });
+
+function note(trace: ReadTrace, role: ReadTrace["reads"][number]["role"], model: string, effort: Effort, read: Read) {
+  const { input_tokens, output_tokens } = read.usage;
+  trace.reads.push({ role, model, effort, ms: read.ms, stop_reason: read.stop_reason, input_tokens, output_tokens, menu: read.menu });
 }
 
 const readFailed = () => new MenuParseError("Couldn't read this menu. Try a sharper photo.");
@@ -181,12 +209,15 @@ export async function parseMenu(
   photos: Photo[],
   strong = false,
   send: Send = () => {},
+  trace: ReadTrace = newTrace(),
 ): Promise<ParsedMenuResponse> {
   if (photos.length === 0) throw new MenuParseError("Add at least one photo");
   if (photos.length > MAX_PHOTOS) throw new MenuParseError(`Up to ${MAX_PHOTOS} photos per menu`);
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const images = toImages(photos);
+  trace.strong = strong;
+  trace.pages = photos.length;
   const usage = { input_tokens: 0, output_tokens: 0 };
   const add = (u: { input_tokens: number; output_tokens: number }) => {
     usage.input_tokens += u.input_tokens;
@@ -196,6 +227,7 @@ export async function parseMenu(
   if (strong) {
     const read = await readWith(client, env.MENU_RETRY_MODEL, "high", images, true, preview(send));
     add(read.usage);
+    note(trace, "careful", env.MENU_RETRY_MODEL, "high", read);
     if (!read.menu) throw readFailed();
     return { menu: read.menu, model: env.MENU_RETRY_MODEL, retried: true, usage };
   }
@@ -207,9 +239,12 @@ export async function parseMenu(
   ]);
   add(low.usage);
   add(medium.usage);
+  note(trace, "low", env.MENU_MODEL, "low", low);
+  note(trace, "medium", env.MENU_MODEL, "medium", medium);
   const cheap = medium.menu ?? low.menu;
 
   const why = disagreement(low.menu, medium.menu);
+  trace.reasons = why;
   console.log("menu quick reads", {
     low: low.menu?.dishes.length ?? null,
     medium: medium.menu?.dishes.length ?? null,
@@ -222,6 +257,7 @@ export async function parseMenu(
   send({ type: "checking" });
   const retry = await readWith(client, env.MENU_RETRY_MODEL, "high", images, true);
   add(retry.usage);
+  note(trace, "careful", env.MENU_RETRY_MODEL, "high", retry);
   console.log("menu careful read", { dishes: retry.menu?.dishes.length ?? null });
   const menu = retry.menu ?? cheap;
   if (!menu) throw readFailed();

@@ -117,6 +117,7 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
     const res = await fetch(`/api/parse-menu${strong ? "?strong=1" : ""}`, {
       method: "POST",
       body: form,
+      headers: { "x-picky-version": __APP_VERSION__ },
       signal,
     }).catch((err) => {
       if (signal.aborted) throw err;
