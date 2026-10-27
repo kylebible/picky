@@ -1,5 +1,9 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { z } from "zod";
+import { ALLERGENS, MenuSchema } from "../shared/menu";
+import { DIETS } from "../shared/profile";
+import { TABLE_CODE } from "../shared/split";
 import { MenuParseError, parseMenu, toPhoto } from "./menu";
 
 export { SplitSession } from "./split-session";
@@ -39,21 +43,40 @@ app.post("/parse-menu", async (c) => {
   }
 });
 
-const JOIN_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-app.post("/sessions", (c) => {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  const code = Array.from(bytes, (b) => JOIN_CODE_CHARS[b % JOIN_CODE_CHARS.length]).join("");
-  return c.json({ code });
+const CreateTableSchema = z.object({
+  menu: MenuSchema,
+  name: z.string().trim().min(1).max(40),
+  allergies: z.array(z.enum(ALLERGENS)),
+  diet: z.enum(DIETS),
 });
 
-app.get("/sessions/:code/ws", async (c) => {
-  const code = c.req.param("code").toUpperCase();
-  if (!/^[A-Z0-9]{6}$/.test(code)) return c.json({ error: "Invalid code" }, 400);
-  const stub = c.env.SPLIT_SESSION.get(c.env.SPLIT_SESSION.idFromName(code));
+const table = (env: Env, code: string) => env.SPLIT_SESSION.get(env.SPLIT_SESSION.idFromName(code));
+
+// Split it tables use a 4-digit code people can type. Try random codes until
+// one is free; with tables expiring after 12 hours, collisions are rare.
+app.post("/tables", async (c) => {
+  const parsed = CreateTableSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: "That menu can't be shared" }, 400);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = String(crypto.getRandomValues(new Uint16Array(1))[0] % 10000).padStart(4, "0");
+    if (await table(c.env, code).create(c.get("userId"), parsed.data)) return c.json({ code });
+  }
+  return c.json({ error: "Couldn't find a free table code. Try again." }, 503);
+});
+
+app.get("/tables/:code", async (c) => {
+  const code = c.req.param("code");
+  if (!TABLE_CODE.test(code)) return c.json({ error: "Table codes are 4 digits" }, 400);
+  const info = await table(c.env, code).info();
+  return info ? c.json(info) : c.json({ error: "There's no table with that code" }, 404);
+});
+
+app.get("/tables/:code/ws", async (c) => {
+  const code = c.req.param("code");
+  if (!TABLE_CODE.test(code)) return c.json({ error: "Table codes are 4 digits" }, 400);
   const url = new URL(c.req.url);
   url.searchParams.set("userId", c.get("userId"));
-  return stub.fetch(new Request(url, c.req.raw));
+  return table(c.env, code).fetch(new Request(url, c.req.raw));
 });
 
 export default app satisfies ExportedHandler<Env>;

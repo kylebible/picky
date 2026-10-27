@@ -539,3 +539,49 @@ body:has(.camera) { background: var(--camera); }
   align-items: baseline;
 }
 .order-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+
+/* Split it. */
+.order-bar > a { flex-grow: 1; color: #fff; text-decoration: none; }
+.avatar {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--page);
+}
+.qr-card { border-radius: 28px; padding: 26px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.qr-card svg { max-width: 100%; height: auto; }
+.table-code { font-size: 34px; letter-spacing: 4px; }
+.table-code-input { height: 64px; font-size: 32px; letter-spacing: 8px; text-align: center; }
+.waiting { background: var(--plate-mains); border-radius: 18px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+.pulse { width: 12px; height: 12px; border-radius: 6px; background: var(--primary); box-shadow: 0 0 0 5px rgba(122, 31, 43, 0.18); flex-shrink: 0; }
+.swipe-card {
+  flex-grow: 1;
+  background: var(--surface);
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: rotate(-1.5deg);
+  box-shadow: 0 10px 30px rgba(42, 26, 24, 0.1);
+  min-height: 380px;
+}
+.swipe-card .art { flex-grow: 1; min-height: 220px; background: var(--hero); display: flex; align-items: center; justify-content: center; }
+.match-banner {
+  background: var(--plate-mains);
+  border-radius: 18px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.match-banner:hover { color: var(--ink); }
+.tag-shared { background: var(--tablemate); border-radius: 10px; padding: 5px 9px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .swipe-card { animation: deal 0.25s ease-out; }
+  @keyframes deal { from { transform: translateY(12px) rotate(0deg); opacity: 0; } }
+}

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
-import type { ParsedMenuResponse } from "../../shared/menu";
+import type { Menu, ParsedMenuResponse } from "../../shared/menu";
 import { remapOrderItems } from "./orderStore";
 import { release, type MenuPhoto } from "./photos";
+import { forgetTable } from "./tableStore";
 
 // The current menu and the read in progress. The parsed menu is kept in
 // localStorage so a reload doesn't lose it; the photos only live in memory.
@@ -71,11 +72,6 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? "Something went wrong reading the menu.");
     const menu = body as ParsedMenuResponse;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(menu));
-    } catch {
-      // Storage full or blocked: the menu still works until the page reloads.
-    }
     // A re-read of the same photos keeps the order, matching dishes by name;
     // a new menu starts a new one.
     const before = strong ? (state.menu?.menu.dishes ?? []) : [];
@@ -83,7 +79,9 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
       const name = before[i]?.name.toLowerCase();
       return name ? menu.menu.dishes.findIndex((d) => d.name.toLowerCase() === name) : -1;
     });
-    set({ menu, reading: { status: "idle" } });
+    if (!strong) forgetTable();
+    saveMenu(menu);
+    set({ reading: { status: "idle" } });
     return true;
   } catch (err) {
     if (signal.aborted) return false;
@@ -96,4 +94,20 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
 export function cancelReading() {
   controller?.abort();
   set({ reading: { status: "idle" } });
+}
+
+function saveMenu(menu: ParsedMenuResponse) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(menu));
+  } catch {
+    // Storage full or blocked: the menu still works until the page reloads.
+  }
+  set({ menu });
+}
+
+/** Uses a menu someone else read, for a tablemate joining a Split it table. */
+export function adoptMenu(menu: Menu) {
+  if (state.menu && JSON.stringify(state.menu.menu) === JSON.stringify(menu)) return;
+  remapOrderItems(() => -1);
+  saveMenu({ menu, model: "shared", retried: false, usage: { input_tokens: 0, output_tokens: 0 } });
 }

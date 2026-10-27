@@ -13,6 +13,8 @@ export type Taste = (typeof TASTES)[number];
 export type Feeling = "love" | "fine" | "nope";
 
 export type Profile = {
+  /** First name, shown to a tablemate. Asked for the first time you split. */
+  name?: string;
   allergies: Allergen[];
   diet: Diet;
   tastes: Partial<Record<Taste, Feeling>>;
