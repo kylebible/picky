@@ -5,6 +5,8 @@ import type { Dish } from "./menu";
 // dish counts as half.
 
 export type OrderItem = {
+  /** Tells apart two lines of the same dish with different choices. Older saved orders don't have one. */
+  id?: string;
   dish: number;
   quantity: number;
   shared: boolean;
@@ -12,7 +14,21 @@ export type OrderItem = {
   shareWith?: number;
   /** A price the person typed in for a market-price or unpriced dish. */
   price?: number;
+  /** One of the dish's sizes, by name. Not set means the first (smallest) size. */
+  size?: string;
+  /** Add-ons picked from the dish's list, by name. */
+  addOns?: string[];
 };
+
+export const lineId = (item: OrderItem) => item.id ?? String(item.dish);
+
+/** The size and add-ons as one key, so lines with the same choices can be merged. */
+export const choicesKey = (item: Pick<OrderItem, "size" | "addOns">) =>
+  [item.size ?? "", ...[...(item.addOns ?? [])].sort()].join("|");
+
+/** "Large, extra cheese", or "" when nothing was picked. */
+export const choicesLabel = (item: Pick<OrderItem, "size" | "addOns">) =>
+  [item.size, ...(item.addOns ?? [])].filter(Boolean).join(", ");
 
 export type Estimate = {
   subtotal: number;
@@ -23,9 +39,17 @@ export type Estimate = {
   unpriced: number[];
 };
 
+/** One of this line's dishes with its size and add-ons, or null when there's no price. */
 export function itemPrice(item: OrderItem, dish: Dish): number | null {
-  if (dish.price_status === "listed" && dish.price !== null) return dish.price;
-  return item.price ?? null;
+  const size = item.size ? dish.sizes.find((s) => s.name === item.size) : undefined;
+  const listed = size ? size.price : dish.price_status === "listed" ? dish.price : null;
+  const base = listed ?? item.price ?? null;
+  if (base === null) return null;
+  const extras = (item.addOns ?? []).reduce(
+    (sum, name) => sum + (dish.add_ons.find((a) => a.name === name)?.price_delta ?? 0),
+    0,
+  );
+  return base + extras;
 }
 
 /** What this line adds to the person's total, or null when it has no price. */
@@ -58,26 +82,23 @@ export function estimate(items: OrderItem[], dishes: Dish[], taxPercent: number,
  * it counts once at full price even when several people added it.
  */
 export function combineOrders(orders: OrderItem[][]): OrderItem[] {
-  const own = new Map<number, OrderItem>();
-  const shared = new Map<number, OrderItem>();
+  const lines = new Map<string, OrderItem>();
   for (const item of orders.flat()) {
-    if (item.shared) {
-      const seen = shared.get(item.dish);
-      shared.set(item.dish, {
-        dish: item.dish,
-        quantity: Math.max(seen?.quantity ?? 0, item.quantity),
-        shared: false,
-        price: seen?.price ?? item.price,
-      });
-    } else {
-      const seen = own.get(item.dish);
-      own.set(item.dish, {
-        dish: item.dish,
-        quantity: (seen?.quantity ?? 0) + item.quantity,
-        shared: false,
-        price: seen?.price ?? item.price,
-      });
-    }
+    const key = `${item.shared ? "shared" : "own"}:${item.dish}:${choicesKey(item)}`;
+    const seen = lines.get(key);
+    lines.set(key, {
+      id: key,
+      dish: item.dish,
+      quantity: !seen
+        ? item.quantity
+        : item.shared
+          ? Math.max(seen.quantity, item.quantity)
+          : seen.quantity + item.quantity,
+      shared: false,
+      price: seen?.price ?? item.price,
+      ...(item.size ? { size: item.size } : {}),
+      ...(item.addOns?.length ? { addOns: item.addOns } : {}),
+    });
   }
-  return [...own.values(), ...shared.values()];
+  return [...lines.values()];
 }

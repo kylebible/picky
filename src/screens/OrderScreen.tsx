@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import type { Dish } from "../../shared/menu";
-import { combineOrders, estimate, itemPrice, lineTotal, type OrderItem } from "../../shared/order";
+import {
+  choicesLabel,
+  combineOrders,
+  estimate,
+  itemPrice,
+  lineId,
+  lineTotal,
+  type OrderItem,
+} from "../../shared/order";
+import { Choices } from "../components/Choices";
 import type { Member } from "../../shared/split";
 import { MenuHeader } from "../components/MenuHeader";
 import { ShareMoreBar } from "../components/Order";
@@ -59,7 +68,9 @@ export function OrderScreen() {
           <div className="panel" style={{ borderRadius: 20 }}>
             {items.map((item) => {
               const dish = dishes[item.dish];
-              return dish ? <OrderRow key={item.dish} item={item} dish={dish} fmt={fmt} currency={currency} /> : null;
+              return dish ? (
+                <OrderRow key={lineId(item)} item={item} dish={dish} fmt={fmt} currency={currency} />
+              ) : null;
             })}
           </div>
 
@@ -219,10 +230,13 @@ function SameCheck({
               const dish = dishes[item.dish];
               const line = dish && lineTotal(item, dish);
               return dish ? (
-                <div className="sum-row" key={item.dish} style={{ fontSize: 15 }}>
+                <div className="sum-row" key={lineId(item)} style={{ fontSize: 15 }}>
                   <span>
                     {item.quantity > 1 ? `${item.quantity} × ` : ""}
                     {dish.name}
+                    {choicesLabel(item) && (
+                      <span style={{ color: "var(--muted)" }}>{`, ${choicesLabel(item).toLowerCase()}`}</span>
+                    )}
                   </span>
                   <span>{line === null ? "No price" : fmt(line)}</span>
                 </div>
@@ -246,6 +260,8 @@ function SameCheck({
   );
 }
 
+const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function listPeople(names: string[]) {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -268,20 +284,47 @@ function OrderRow({
   currency: string | null;
 }) {
   const [editingPrice, setEditingPrice] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const id = lineId(item);
   const line = lineTotal(item, dish);
   const price = itemPrice(item, dish);
-  const needsPrice = dish.price_status !== "listed" || dish.price === null;
+  const sizePrice = item.size ? dish.sizes.find((s) => s.name === item.size)?.price : undefined;
+  const needsPrice =
+    sizePrice === undefined || sizePrice === null ? dish.price_status !== "listed" || dish.price === null : false;
+  const hasChoices = dish.sizes.length > 0 || dish.add_ons.length > 0;
+  const picked = choicesLabel({ size: item.size ?? dish.sizes[0]?.name, addOns: item.addOns });
 
   return (
     <div className="row" style={{ cursor: "default", alignItems: "flex-start" }}>
       <Plate category={dish.category} />
       <div className="row-main">
         <div className="row-name">{dish.name}</div>
+        {hasChoices && (
+          <button
+            type="button"
+            className="share-toggle"
+            aria-expanded={choosing}
+            onClick={() => setChoosing(!choosing)}
+          >
+            {picked ? `${capitalizeFirst(picked)}. ` : ""}
+            <span className="choices-btn">{choosing ? "Done" : picked ? "Change" : "Pick a size or add-ons"}</span>
+          </button>
+        )}
+        {choosing && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 0 8px" }}>
+            <Choices
+              dish={dish}
+              currency={currency}
+              picked={{ size: item.size, addOns: item.addOns ?? [] }}
+              onChange={(next) => updateItem(id, { size: next.size, addOns: next.addOns })}
+            />
+          </div>
+        )}
         <button
           type="button"
           className="share-toggle"
           aria-pressed={item.shared}
-          onClick={() => updateItem(item.dish, { shared: !item.shared })}
+          onClick={() => updateItem(id, { shared: !item.shared })}
         >
           {item.shared
             ? `Shared${(item.shareWith ?? 2) > 2 ? ` ${item.shareWith} ways` : ", half"} of ${price === null ? "the price" : formatPrice(price * item.quantity, currency)}. Undo`
@@ -292,7 +335,7 @@ function OrderRow({
             <button
               type="button"
               aria-label={`One fewer ${dish.name}`}
-              onClick={() => updateItem(item.dish, { quantity: item.quantity - 1 })}
+              onClick={() => updateItem(id, { quantity: item.quantity - 1 })}
             >
               −
             </button>
@@ -300,7 +343,7 @@ function OrderRow({
             <button
               type="button"
               aria-label={`One more ${dish.name}`}
-              onClick={() => updateItem(item.dish, { quantity: item.quantity + 1 })}
+              onClick={() => updateItem(id, { quantity: item.quantity + 1 })}
             >
               +
             </button>
@@ -321,20 +364,14 @@ function OrderRow({
               onSubmit={(ev) => {
                 ev.preventDefault();
                 const value = parseFloat(new FormData(ev.currentTarget).get("price") as string);
-                updateItem(item.dish, { price: Number.isFinite(value) && value > 0 ? value : undefined });
+                updateItem(id, { price: Number.isFinite(value) && value > 0 ? value : undefined });
                 setEditingPrice(false);
               }}
             >
-              <label className="visually-hidden" htmlFor={`price-${item.dish}`}>
+              <label className="visually-hidden" htmlFor={`price-${id}`}>
                 Price of {dish.name}
               </label>
-              <input
-                id={`price-${item.dish}`}
-                name="price"
-                inputMode="decimal"
-                autoFocus
-                defaultValue={item.price ?? ""}
-              />
+              <input id={`price-${id}`} name="price" inputMode="decimal" autoFocus defaultValue={item.price ?? ""} />
               <button type="submit" className="btn btn-outline" style={{ height: 36 }}>
                 Save
               </button>
