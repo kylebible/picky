@@ -5,6 +5,7 @@ import { EMPTY_PROFILE, type Allergen, type Diet } from "../../shared/profile";
 import { almost, deckFor, QUICK_ALLERGIES, TABLE_CODE, type Member } from "../../shared/split";
 import { Plate } from "../components/Plate";
 import { Qr } from "../components/Qr";
+import { SwipeCard } from "../components/SwipeCard";
 import { BackButton, PriceCell, Redirect, Wordmark } from "../components/ui";
 import { formatPrice } from "../lib/format";
 import { adoptMenu, useMenuStore } from "../lib/menuStore";
@@ -414,7 +415,7 @@ export function Swipe({ code }: { code: string }) {
 
       {dish ? (
         <>
-          <article className="swipe-card" key={current}>
+          <SwipeCard key={current} onSwipe={(liked) => swipe(current, liked)}>
             <div className="art">
               <Plate
                 category={dish.category}
@@ -442,7 +443,7 @@ export function Swipe({ code }: { code: string }) {
                   .join(" ")}
               </div>
             </div>
-          </article>
+          </SwipeCard>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
             <button
               type="button"
