@@ -14,7 +14,7 @@ function dish(name: string, extra: Partial<Dish> = {}): Dish {
     ingredients: [],
     allergens: [],
     diet_tags: [],
-    options: [],
+    sizes: [], add_ons: [],
     ...extra,
   };
 }
