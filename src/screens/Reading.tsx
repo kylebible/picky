@@ -2,9 +2,13 @@ import { useEffect, useState } from "react";
 import { cancelReading, readMenu, useMenuStore } from "../lib/menuStore";
 import { navigate } from "../lib/router";
 
-// Reads usually take 10 to 20 seconds. The bar eases toward 90% over that
-// time and only fills when the menu arrives, so it never claims to be done.
+// Most reads take 10 to 20 seconds. When the two quick reads disagree the menu
+// gets a slower careful read, which can take a few minutes on a dense menu.
+// The bar eases toward 60% over the quick read, then creeps toward 90% over the
+// careful one, and only fills when the menu arrives, so it never claims to be done.
 const EXPECTED_MS = 15000;
+const CAREFUL_MS = 90000;
+const SLOW_AFTER_MS = 30000;
 
 function useProgress(startedAt: number | null) {
   const [now, setNow] = useState(Date.now());
@@ -13,14 +17,16 @@ function useProgress(startedAt: number | null) {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
   }, [startedAt]);
-  if (startedAt === null) return 0;
-  const t = (now - startedAt) / EXPECTED_MS;
-  return Math.round(90 * (1 - Math.exp(-2 * t)));
+  if (startedAt === null) return { progress: 0, slow: false };
+  const elapsed = now - startedAt;
+  const quick = 60 * (1 - Math.exp((-2 * elapsed) / EXPECTED_MS));
+  const careful = 30 * (1 - Math.exp(-elapsed / CAREFUL_MS));
+  return { progress: Math.round(quick + careful), slow: elapsed > SLOW_AFTER_MS };
 }
 
 export function Reading() {
   const { reading, photos, menu } = useMenuStore();
-  const progress = useProgress(reading.status === "reading" ? reading.startedAt : null);
+  const { progress, slow } = useProgress(reading.status === "reading" ? reading.startedAt : null);
 
   useEffect(() => {
     // Done: the store went back to idle with a menu.
@@ -65,7 +71,9 @@ export function Reading() {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <h1>Reading your menu</h1>
         <p className="lede">
-          {pages > 1 ? `Reading ${pages} pages. ` : ""}This usually takes 10 to 20 seconds.
+          {slow
+            ? "This is a big menu, so we're taking a closer look. That can take a few minutes."
+            : `${pages > 1 ? `Reading ${pages} pages. ` : ""}This usually takes 10 to 20 seconds.`}
         </p>
         <div
           className="progress"

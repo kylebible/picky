@@ -24,7 +24,7 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SplitSession"] }],
   "vars": {
     "MENU_MODEL": "claude-haiku-5-5",
-    "MENU_RETRY_MODEL": "claude-sonnet-5-5"
+    "MENU_RETRY_MODEL": "claude-opus-5-5"
   }
   // Secrets (set by CI, never committed): ANTHROPIC_API_KEY
 }

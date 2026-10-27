@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { Buffer } from "node:buffer";
-import { MenuSchema, type Menu, type ParsedMenuResponse } from "../shared/menu";
+import { MenuSchema, type Dish, type Menu, type ParsedMenuResponse } from "../shared/menu";
 
 export const MAX_PHOTOS = 4;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -14,7 +14,7 @@ Rules:
 - Include every orderable item: starters, mains, sides, desserts and drinks. Skip headings, taglines and contact details.
 - section is the menu heading the dish sits under.
 - category: the closest kind of dish from the allowed list, judged from the dish itself rather than the section (a crab cake under Starters is shellfish). Use "other" only when nothing fits.
-- price: the number printed for the dish, without the currency symbol. Set price_status to "listed" when a number is printed, "market_price" when the menu says MP, market price, seasonal price or ask your server, and "not_listed" when the menu shows no price for it. price is null unless price_status is "listed".
+- price: the number printed for the dish, without the currency symbol. Set price_status to "listed" when a number is printed, "market_price" when the menu says MP, market price, seasonal price or ask your server, and "not_listed" when the menu shows no price for it, and "unreadable" when a price is printed but you can't make out the number. price is null unless price_status is "listed".
 - ingredients: mark each one "stated" when the menu text names it, or "likely" when you infer it from the dish (for example garlic in garlic bread is stated, flour is likely).
 - allergens: only from the allowed list, each marked "stated" or "likely" the same way. Prefer listing a likely allergen over leaving it out.
 - diet_tags: short lowercase tags such as vegetarian, vegan, gluten-free, pescatarian, spicy, when the menu marks them or they clearly apply.
@@ -36,77 +36,152 @@ export function toPhoto(file: File): Promise<Photo> {
   return file.arrayBuffer().then((data) => ({ data, type: file.type as ImageType }));
 }
 
-/** Signs that a cheap model misread the menu and a stronger one should try. */
-export function needsRetry(menu: Menu | null, photoCount: number): boolean {
-  if (!menu) return true;
-  if (menu.dishes.length < 3 * photoCount) return true;
-  const listed = menu.dishes.filter((d) => d.price_status === "listed").length;
-  const unlisted = menu.dishes.filter((d) => d.price_status === "not_listed").length;
-  // A menu that prices some dishes but "loses" most others was probably misread.
-  return listed > 0 && unlisted > menu.dishes.length / 2;
+type Effort = "low" | "medium" | "high";
+
+const norm = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, "").trim();
+
+/** Edit-distance similarity from 0 to 1, for dish names that differ by a typo or accent. */
+function similarity(a: string, b: string) {
+  if (!a.length && !b.length) return 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return 1 - prev[b.length] / Math.max(a.length, b.length);
 }
 
-async function readWith(
-  client: Anthropic,
-  model: string,
-  photos: Photo[],
-  withFallback: boolean,
-) {
-  const response = await client.beta.messages.parse({
-    model,
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    output_config: { effort: "low", format: betaZodOutputFormat(MenuSchema) },
-    ...(withFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-    messages: [
-      {
-        role: "user",
-        content: [
-          ...photos.map((p) => ({
-            type: "image" as const,
-            source: {
-              type: "base64" as const,
-              media_type: p.type,
-              data: Buffer.from(p.data).toString("base64"),
-            },
-          })),
-          { type: "text" as const, text: `These are ${photos.length} page(s) of one menu. Return every dish.` },
-        ],
-      },
-    ],
-  });
-  const menu = response.stop_reason === "refusal" ? null : response.parsed_output;
-  return { menu, usage: response.usage };
+/** Pairs each dish in `ref` with at most one dish in `other`: exact names first, then close ones. */
+function matchDishes(ref: Dish[], other: Dish[]): [Dish, Dish][] {
+  const pairs: [Dish, Dish][] = [];
+  const left = new Set(other.map((_, i) => i));
+  const unmatched: Dish[] = [];
+  const byName = new Map<string, number[]>();
+  other.forEach((d, i) => byName.set(norm(d.name), [...(byName.get(norm(d.name)) ?? []), i]));
+  for (const d of ref) {
+    const j = byName.get(norm(d.name))?.find((i) => left.has(i));
+    if (j === undefined) unmatched.push(d);
+    else {
+      left.delete(j);
+      pairs.push([d, other[j]]);
+    }
+  }
+  for (const d of unmatched) {
+    let best = -1;
+    let bestScore = 0.75;
+    for (const j of left) {
+      const score = similarity(norm(d.name), norm(other[j].name));
+      if (score >= bestScore) [best, bestScore] = [j, score];
+    }
+    if (best >= 0) {
+      left.delete(best);
+      pairs.push([d, other[best]]);
+    }
+  }
+  return pairs;
 }
 
 /**
- * Reads the menu on MENU_MODEL, retrying on MENU_RETRY_MODEL when the result
- * looks wrong. `strong` skips straight to the retry model, for when the person
- * taps "This looks wrong".
+ * Reasons two cheap reads of the same menu disagree, so a stronger model should
+ * read it. Thresholds come from the real-menu tests: on 26 menus this sent about
+ * 38% to the retry model and kept dish and price accuracy near the Opus read.
+ */
+export function disagreement(a: Menu | null, b: Menu | null): string[] {
+  if (!a || !b) return ["a read failed"];
+  const na = a.dishes.length;
+  const nb = b.dishes.length;
+  if (na === 0 && nb === 0) return ["no dishes found"];
+  const why: string[] = [];
+  if (Math.abs(na - nb) / Math.max(na, nb) > 0.1) why.push("dish counts differ");
+  const pairs = matchDishes(b.dishes, a.dishes);
+  if (pairs.length / Math.max(nb, 1) < 0.9) why.push("dish names differ");
+  const priced = pairs.filter(([r]) => r.price_status === "listed" && r.price !== null);
+  const pricesMatch = priced.filter(([r, c]) => c.price !== null && Math.abs(r.price! - c.price) < 0.01).length;
+  if (priced.length && pricesMatch / priced.length < 0.9) why.push("prices differ");
+  return why;
+}
+
+async function readWith(client: Anthropic, model: string, effort: Effort, photos: Photo[], withFallback: boolean) {
+  // Streamed because a dense menu on the retry model can take minutes and tens of thousands of tokens.
+  const response = await client.beta.messages
+    .stream({
+      model,
+      max_tokens: 64000,
+      system: SYSTEM_PROMPT,
+      output_config: { effort, format: betaZodOutputFormat(MenuSchema) },
+      ...(withFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...photos.map((p) => ({
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: p.type,
+                data: Buffer.from(p.data).toString("base64"),
+              },
+            })),
+            { type: "text" as const, text: `These are ${photos.length} page(s) of one menu. Return every dish.` },
+          ],
+        },
+      ],
+    })
+    .finalMessage()
+    .catch((err) => {
+      // Output that was cut off or doesn't fit the schema counts as a failed read; API errors still throw.
+      if (err instanceof Anthropic.APIError) throw err;
+      return null;
+    });
+  if (!response) return { menu: null, usage: { input_tokens: 0, output_tokens: 0 } };
+  const menu = response.stop_reason === "end_turn" ? response.parsed_output : null;
+  return { menu, usage: response.usage };
+}
+
+const readFailed = () => new MenuParseError("Couldn't read this menu. Try a sharper photo.");
+
+/**
+ * Reads the menu twice on MENU_MODEL (low and medium effort, in parallel) and
+ * retries on MENU_RETRY_MODEL at high effort when the two reads disagree.
+ * `strong` skips straight to the retry model, for when the person taps
+ * "This looks wrong".
  */
 export async function parseMenu(env: Env, photos: Photo[], strong = false): Promise<ParsedMenuResponse> {
   if (photos.length === 0) throw new MenuParseError("Add at least one photo");
   if (photos.length > MAX_PHOTOS) throw new MenuParseError(`Up to ${MAX_PHOTOS} photos per menu`);
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const usage = { input_tokens: 0, output_tokens: 0 };
+  const add = (u: { input_tokens: number; output_tokens: number }) => {
+    usage.input_tokens += u.input_tokens;
+    usage.output_tokens += u.output_tokens;
+  };
+
   if (strong) {
-    const read = await readWith(client, env.MENU_RETRY_MODEL, photos, true);
-    if (!read.menu) throw new MenuParseError("Couldn't read this menu. Try a sharper photo.");
-    const usage = { input_tokens: read.usage.input_tokens, output_tokens: read.usage.output_tokens };
+    const read = await readWith(client, env.MENU_RETRY_MODEL, "high", photos, true);
+    add(read.usage);
+    if (!read.menu) throw readFailed();
     return { menu: read.menu, model: env.MENU_RETRY_MODEL, retried: true, usage };
   }
 
-  const first = await readWith(client, env.MENU_MODEL, photos, false);
-  const usage = { input_tokens: first.usage.input_tokens, output_tokens: first.usage.output_tokens };
+  const [low, medium] = await Promise.all([
+    readWith(client, env.MENU_MODEL, "low", photos, false),
+    readWith(client, env.MENU_MODEL, "medium", photos, false),
+  ]);
+  add(low.usage);
+  add(medium.usage);
+  const cheap = medium.menu ?? low.menu;
 
-  if (!needsRetry(first.menu, photos.length)) {
-    return { menu: first.menu!, model: env.MENU_MODEL, retried: false, usage };
+  if (disagreement(low.menu, medium.menu).length === 0) {
+    return { menu: cheap!, model: env.MENU_MODEL, retried: false, usage };
   }
 
-  const second = await readWith(client, env.MENU_RETRY_MODEL, photos, true);
-  usage.input_tokens += second.usage.input_tokens;
-  usage.output_tokens += second.usage.output_tokens;
-  const menu = second.menu ?? first.menu;
-  if (!menu) throw new MenuParseError("Couldn't read this menu. Try a sharper photo.");
-  return { menu, model: second.menu ? env.MENU_RETRY_MODEL : env.MENU_MODEL, retried: true, usage };
+  const retry = await readWith(client, env.MENU_RETRY_MODEL, "high", photos, true);
+  add(retry.usage);
+  const menu = retry.menu ?? cheap;
+  if (!menu) throw readFailed();
+  return { menu, model: retry.menu ? env.MENU_RETRY_MODEL : env.MENU_MODEL, retried: true, usage };
 }
