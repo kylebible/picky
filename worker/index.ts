@@ -133,19 +133,20 @@ app.post("/parse-menu", async (c) => {
     parseMenu(c.env, photos, c.req.query("strong") === "1", send, trace)
       .then(
         async (result) => {
-          send({ type: "done", result });
+          // Save before the final event: once the response ends, unfinished work can be cancelled.
           await save("done", result);
+          send({ type: "done", result });
         },
         async (err) => {
           if (!(err instanceof MenuParseError)) console.error("parse-menu failed", err);
           const known = err instanceof MenuParseError;
           const reason = String(err instanceof Error ? err.message : err).slice(0, 300);
+          await save("error", undefined, reason);
           send({
             type: "error",
             message: known ? err.message : "Something went wrong reading the menu.",
             detail: known ? undefined : reason,
           });
-          await save("error", undefined, reason);
         },
       )
       .finally(() => {
