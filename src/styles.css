@@ -75,12 +75,15 @@ h2 { font-size: 17px; }
   font-size: 30px;
   letter-spacing: -1px;
 }
+.wordmark .i { position: relative; }
+/* Centered over the dotless i, so it stays put whatever the font metrics. */
 .wordmark .dot {
   position: absolute;
-  left: 0.55em;
+  left: 50%;
   top: 0.03em;
   width: 0.27em;
   height: 0.27em;
+  margin-left: -0.135em;
   border-radius: 50%;
   background: var(--wordmark-dot);
 }
@@ -353,3 +356,57 @@ body:has(.camera) { background: var(--camera); }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Setup: toggle chips and the Love / Fine / Nope switch. */
+.steps { flex-grow: 1; display: flex; gap: 6px; }
+.steps span { flex-grow: 1; height: 6px; border-radius: 3px; background: var(--border); }
+.steps span.on { background: var(--primary); }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+.toggles.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.toggle {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.toggle[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: #fff; font-weight: 700; }
+.toggle.more { border-style: dashed; border-color: #9a7f79; color: var(--primary); font-weight: 700; }
+.taste-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.taste-row:last-child { border-bottom: 0; }
+.taste-row > span:first-child { font-weight: 700; font-size: 16px; }
+.seg { display: flex; background: #f6eeec; border-radius: 12px; padding: 3px; flex-shrink: 0; }
+.seg button { min-height: 38px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; font-size: 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { font-weight: 700; background: var(--surface); box-shadow: 0 1px 3px rgba(42, 26, 24, 0.15); }
+.seg button.love[aria-pressed="true"] { background: var(--primary); color: #fff; box-shadow: none; }
+.seg button.nope[aria-pressed="true"] { background: var(--warning-text); color: #fff; box-shadow: none; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-weight: 700; font-size: 15px; }
+.input {
+  height: 50px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  padding: 0 14px;
+  font-size: 15px;
+}
+.input:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* Tabs: For you / Full menu / Order. */
+.tabs { background: var(--tab-track); border-radius: 16px; padding: 4px; display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 4px; }
+.tabs a { min-height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: var(--ink); text-decoration: none; font-size: 15px; }
+.tabs a[aria-current="page"] { background: var(--surface); font-weight: 700; }
+
+/* The one "Start here" card on For you. */
+.hero-card { background: var(--surface); border-radius: 22px; overflow: hidden; display: flex; flex-direction: column; }
+.hero-card .art { height: 112px; background: var(--hero); display: flex; align-items: center; justify-content: center; position: relative; }
+.hero-card .badge { position: absolute; left: 14px; top: 14px; background: var(--primary); color: #fff; border-radius: 12px; padding: 5px 10px; font-size: 13px; font-weight: 700; }
+.hero-card .body { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 6px; color: var(--ink); text-decoration: none; }
+.tastes-btn { min-height: 44px; padding: 0 14px; border-radius: 22px; border: 0; background: var(--plate-mains); color: var(--ink); font-weight: 700; font-size: 14px; cursor: pointer; }

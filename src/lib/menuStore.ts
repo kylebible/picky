@@ -59,12 +59,14 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
   const form = new FormData();
   photos.forEach((p, i) => form.append("photos", new File([p.blob], `page-${i + 1}.jpg`, { type: "image/jpeg" })));
   try {
-    const res = await fetch(`/api/parse-menu${strong ? "?strong=1" : ""}`, { method: "POST", body: form, signal }).catch(
-      (err) => {
-        if (signal.aborted) throw err;
-        throw new Error("We couldn't reach Picky. Check your connection and try again.");
-      },
-    );
+    const res = await fetch(`/api/parse-menu${strong ? "?strong=1" : ""}`, {
+      method: "POST",
+      body: form,
+      signal,
+    }).catch((err) => {
+      if (signal.aborted) throw err;
+      throw new Error("We couldn't reach Picky. Check your connection and try again.");
+    });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? "Something went wrong reading the menu.");
     const menu = body as ParsedMenuResponse;
