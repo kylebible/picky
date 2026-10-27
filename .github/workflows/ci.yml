@@ -63,6 +63,10 @@ jobs:
               echo "::notice title=No preview yet::The Worker is created by the first deploy to main; previews start after that."
               exit 0
             fi
+            if grep -qi "pending Durable Object migration" upload.log; then
+              echo "::notice title=No preview for this PR::It adds a Durable Object class, which only wrangler deploy can create. It deploys on merge to main."
+              exit 0
+            fi
             # Surface the error as an annotation so it's readable without the full log.
             echo "::error title=wrangler versions upload failed::$(tail -n 25 upload.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
             exit 1
