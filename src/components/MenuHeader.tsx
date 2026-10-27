@@ -1,15 +1,18 @@
+import { orderCount, useOrder } from "../lib/orderStore";
 import { navigate } from "../lib/router";
 import { Wordmark } from "./ui";
 
-export type Tab = "picks" | "menu";
+export type Tab = "picks" | "menu" | "order";
 
 const TABS: { id: Tab; label: string; path: string }[] = [
   { id: "picks", label: "For you", path: "/picks" },
   { id: "menu", label: "Full menu", path: "/menu" },
+  { id: "order", label: "Order", path: "/order" },
 ];
 
 export function MenuHeader({ title, tab }: { title: string; tab: Tab }) {
   const here = TABS.find((t) => t.id === tab)!.path;
+  const count = orderCount(useOrder().items);
   return (
     <>
       <div className="topbar">
@@ -35,7 +38,7 @@ export function MenuHeader({ title, tab }: { title: string; tab: Tab }) {
               if (t.id !== tab) navigate(t.path, { replace: true });
             }}
           >
-            {t.label}
+            {t.id === "order" ? `Order (${count})` : t.label}
           </a>
         ))}
       </nav>

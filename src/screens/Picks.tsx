@@ -1,6 +1,7 @@
 import { rankMenu } from "../../shared/rank";
 import { EMPTY_PROFILE } from "../../shared/profile";
 import { MenuHeader } from "../components/MenuHeader";
+import { AddButton, OrderBar } from "../components/Order";
 import { Plate } from "../components/Plate";
 import { PriceCell, Redirect, WarnIcon } from "../components/ui";
 import { useMenuStore } from "../lib/menuStore";
@@ -40,34 +41,34 @@ export function Picks() {
       )}
 
       {top && topSafe && (
-        <a
-          className="hero-card"
-          href={`/dish/${top.index}`}
-          onClick={open(top.index)}
-          style={{ textDecoration: "none" }}
-        >
-          <div className="art">
-            <Plate
-              category={top.dish.category}
-              size={104}
-              label={`Drawing of ${CATEGORY_LABEL[top.dish.category].toLowerCase()}`}
-            />
-            <span className="badge">Start here</span>
-          </div>
-          <div className="body">
-            <div className="dish-head">
-              <div className="display" style={{ fontSize: 22 }}>
-                {top.dish.name}
+        <div className="hero-card">
+          <a href={`/dish/${top.index}`} onClick={open(top.index)} style={{ textDecoration: "none" }}>
+            <div className="art">
+              <Plate
+                category={top.dish.category}
+                size={104}
+                label={`Drawing of ${CATEGORY_LABEL[top.dish.category].toLowerCase()}`}
+              />
+              <span className="badge">Start here</span>
+            </div>
+            <div className="body">
+              <div className="dish-head">
+                <div className="display" style={{ fontSize: 22 }}>
+                  {top.dish.name}
+                </div>
+                <div style={{ fontSize: 18 }}>
+                  <PriceCell dish={top.dish} currency={currency} />
+                </div>
               </div>
-              <div style={{ fontSize: 18 }}>
-                <PriceCell dish={top.dish} currency={currency} />
+              <div style={{ fontSize: 15, color: "var(--muted)" }}>
+                {reasons(top).good.join(" ") || top.dish.description || "Our best guess for you on this menu."}
               </div>
             </div>
-            <div style={{ fontSize: 15, color: "var(--muted)" }}>
-              {reasons(top).good.join(" ") || top.dish.description || "Our best guess for you on this menu."}
-            </div>
+          </a>
+          <div style={{ padding: "0 16px 14px" }}>
+            <AddButton dish={top.index} />
           </div>
-        </a>
+        </div>
       )}
 
       {(topSafe ? rest : ranked).length > 0 && (
@@ -102,6 +103,7 @@ export function Picks() {
       <p className="small center" style={{ margin: 0 }}>
         Allergy info is a warning, never a guarantee. Always check with your server.
       </p>
+      <OrderBar />
     </main>
   );
 }
