@@ -53,3 +53,17 @@ export type ParsedMenuResponse = {
   retried: boolean;
   usage: { input_tokens: number; output_tokens: number };
 };
+
+/** Lines of the newline-delimited JSON that /api/parse-menu streams back. */
+export type MenuStreamEvent =
+  // The restaurant name and currency, once the first read has written them.
+  | { type: "menu"; restaurant_name: string | null; currency: string | null }
+  // A dish from the first read, sent as soon as it is complete, for the reading screen.
+  | { type: "dish"; dish: Dish }
+  // The quick reads disagreed, so a slower careful read has started.
+  | { type: "checking" }
+  // Sent every few seconds so phones don't drop a connection that looks idle.
+  | { type: "ping" }
+  | { type: "done"; result: ParsedMenuResponse }
+  // `detail` is the technical reason, shown small under the message while Picky is in beta.
+  | { type: "error"; message: string; detail?: string };

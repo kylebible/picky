@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
-import { ALLERGENS, MenuSchema } from "../shared/menu";
+import { ALLERGENS, MenuSchema, type MenuStreamEvent } from "../shared/menu";
 import { DIETS } from "../shared/profile";
 import { TABLE_CODE } from "../shared/split";
-import { MenuParseError, parseMenu, toPhoto } from "./menu";
+import { MAX_PHOTOS, MenuParseError, parseMenu, toPhoto } from "./menu";
 
 export { SplitSession } from "./split-session";
 
@@ -31,16 +31,49 @@ app.use("*", async (c, next) => {
 
 app.get("/health", (c) => c.json({ ok: true }));
 
+// Bad uploads get a plain 400. Otherwise the reply streams newline-delimited
+// MenuStreamEvents, so the phone can show dishes while the menu is still being read.
 app.post("/parse-menu", async (c) => {
+  let photos;
   try {
     const form = await c.req.formData();
     const files = form.getAll("photos").filter((f): f is File => f instanceof File);
-    const photos = await Promise.all(files.map(toPhoto));
-    return c.json(await parseMenu(c.env, photos, c.req.query("strong") === "1"));
+    photos = await Promise.all(files.map(toPhoto));
+    if (photos.length === 0) throw new MenuParseError("Add at least one photo");
+    if (photos.length > MAX_PHOTOS) throw new MenuParseError(`Up to ${MAX_PHOTOS} photos per menu`);
   } catch (err) {
     if (err instanceof MenuParseError) return c.json({ error: err.message }, 400);
     throw err;
   }
+
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const send = (event: MenuStreamEvent) => {
+    writer.write(encoder.encode(JSON.stringify(event) + "\n")).catch(() => {});
+  };
+  // A careful read can go minutes without a dish to send; iOS Safari drops idle fetches.
+  const ping = setInterval(() => send({ type: "ping" }), 5000);
+  c.executionCtx.waitUntil(
+    parseMenu(c.env, photos, c.req.query("strong") === "1", send)
+      .then((result) => send({ type: "done", result }))
+      .catch((err) => {
+        if (!(err instanceof MenuParseError)) console.error("parse-menu failed", err);
+        const known = err instanceof MenuParseError;
+        send({
+          type: "error",
+          message: known ? err.message : "Something went wrong reading the menu.",
+          detail: known ? undefined : String(err instanceof Error ? err.message : err).slice(0, 300),
+        });
+      })
+      .finally(() => {
+        clearInterval(ping);
+        writer.close().catch(() => {});
+      }),
+  );
+  return new Response(readable, {
+    headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+  });
 });
 
 const CreateTableSchema = z.object({

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Plate } from "../components/Plate";
+import { PriceCell } from "../components/ui";
 import { cancelReading, readMenu, useMenuStore } from "../lib/menuStore";
 import { navigate } from "../lib/router";
 
@@ -39,6 +41,7 @@ export function Reading() {
         <div className="topbar" />
         <h1>We couldn't read that menu</h1>
         <div className="error-box">{reading.message}</div>
+        {reading.detail && <p className="small">Details for Picky's team: {reading.detail}</p>}
         <div className="grow" />
         {photos.length > 0 && (
           <button type="button" className="btn btn-primary" onClick={() => readMenu(photos)}>
@@ -53,6 +56,15 @@ export function Reading() {
   }
 
   const pages = reading.status === "reading" ? reading.pages : 1;
+  const dishes = reading.status === "reading" ? reading.dishes : [];
+  const currency = reading.status === "reading" ? reading.currency : null;
+  const checking = reading.status === "reading" && reading.checking;
+  const found = `${dishes.length} ${dishes.length === 1 ? "dish" : "dishes"}`;
+
+  let lede = `${pages > 1 ? `Reading ${pages} pages. ` : ""}This usually takes 10 to 20 seconds.`;
+  if (checking) lede = `Found ${found}. Taking a closer look so we don't miss any. Big menus can take a few minutes.`;
+  else if (dishes.length) lede = `Found ${found} so far.`;
+  else if (slow) lede = "This is a big menu, so we're taking a closer look. That can take a few minutes.";
 
   return (
     <main className="screen">
@@ -70,10 +82,8 @@ export function Reading() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <h1>Reading your menu</h1>
-        <p className="lede">
-          {slow
-            ? "This is a big menu, so we're taking a closer look. That can take a few minutes."
-            : `${pages > 1 ? `Reading ${pages} pages. ` : ""}This usually takes 10 to 20 seconds.`}
+        <p className="lede" aria-live="polite">
+          {lede}
         </p>
         <div
           className="progress"
@@ -87,21 +97,38 @@ export function Reading() {
           <div style={{ width: `${progress}%` }} />
         </div>
       </div>
-      <div className="panel" aria-hidden="true">
-        {[60, 48, 66, 52, 40].map((w, i) => (
-          <div className="skeleton-row" key={i}>
-            <span className="bar" style={{ width: 44, height: 44, borderRadius: 22 }} />
-            <span style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-              <span className="bar" style={{ height: 12, width: `${w}%` }} />
-              <span className="bar" style={{ height: 10, width: `${w / 2}%`, background: "#F6EEEC" }} />
-            </span>
-          </div>
-        ))}
-      </div>
+      {dishes.length > 0 ? (
+        <div className="panel" style={{ borderRadius: 20 }}>
+          {dishes.map((dish, i) => (
+            <div className="row" key={i}>
+              <Plate category={dish.category} />
+              <div className="row-main">
+                <div className="row-name">{dish.name}</div>
+                {dish.description && <div className="row-sub">{dish.description}</div>}
+              </div>
+              <PriceCell dish={dish} currency={currency} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="panel" aria-hidden="true">
+          {[60, 48, 66, 52, 40].map((w, i) => (
+            <div className="skeleton-row" key={i}>
+              <span className="bar" style={{ width: 44, height: 44, borderRadius: 22 }} />
+              <span style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                <span className="bar" style={{ height: 12, width: `${w}%` }} />
+                <span className="bar" style={{ height: 10, width: `${w / 2}%`, background: "#F6EEEC" }} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="grow" />
-      <div className="note">
-        While you wait: we'll mark anything we're unsure about, like a missing price, so you know what to ask.
-      </div>
+      {dishes.length === 0 && (
+        <div className="note">
+          While you wait: we'll mark anything we're unsure about, like a missing price, so you know what to ask.
+        </div>
+      )}
     </main>
   );
 }

@@ -1,7 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { Buffer } from "node:buffer";
-import { MenuSchema, type Dish, type Menu, type ParsedMenuResponse } from "../shared/menu";
+import { MenuSchema, type Dish, type Menu, type MenuStreamEvent, type ParsedMenuResponse } from "../shared/menu";
+import { DishStream } from "./dish-stream";
 
 export const MAX_PHOTOS = 4;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -104,38 +105,63 @@ export function disagreement(a: Menu | null, b: Menu | null): string[] {
   return why;
 }
 
-async function readWith(client: Anthropic, model: string, effort: Effort, photos: Photo[], withFallback: boolean) {
+type Send = (event: MenuStreamEvent) => void;
+
+/** Sends the menu's header and each finished dish from a read's text as it streams. */
+function preview(send: Send) {
+  const dishes = new DishStream();
+  let sentHeader = false;
+  return (text: string) => {
+    const found = dishes.push(text);
+    if (!sentHeader && dishes.header) {
+      sentHeader = true;
+      send({ type: "menu", ...dishes.header });
+    }
+    found.forEach((dish) => send({ type: "dish", dish }));
+  };
+}
+
+/** Base64-encodes the photos once, since up to three reads send them. */
+function toImages(photos: Photo[]) {
+  return photos.map((p) => ({
+    type: "image" as const,
+    source: { type: "base64" as const, media_type: p.type, data: Buffer.from(p.data).toString("base64") },
+  }));
+}
+
+type Images = ReturnType<typeof toImages>;
+
+async function readWith(
+  client: Anthropic,
+  model: string,
+  effort: Effort,
+  images: Images,
+  withFallback: boolean,
+  onText?: (text: string) => void,
+) {
   // Streamed because a dense menu on the retry model can take minutes and tens of thousands of tokens.
-  const response = await client.beta.messages
-    .stream({
-      model,
-      max_tokens: 64000,
-      system: SYSTEM_PROMPT,
-      output_config: { effort, format: betaZodOutputFormat(MenuSchema) },
-      ...(withFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...photos.map((p) => ({
-              type: "image" as const,
-              source: {
-                type: "base64" as const,
-                media_type: p.type,
-                data: Buffer.from(p.data).toString("base64"),
-              },
-            })),
-            { type: "text" as const, text: `These are ${photos.length} page(s) of one menu. Return every dish.` },
-          ],
-        },
-      ],
-    })
-    .finalMessage()
-    .catch((err) => {
-      // Output that was cut off or doesn't fit the schema counts as a failed read; API errors still throw.
-      if (err instanceof Anthropic.APIError) throw err;
-      return null;
+  const stream = client.beta.messages.stream({
+    model,
+    max_tokens: 64000,
+    system: SYSTEM_PROMPT,
+    output_config: { effort, format: betaZodOutputFormat(MenuSchema) },
+    ...(withFallback ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...images,
+          { type: "text" as const, text: `These are ${images.length} page(s) of one menu. Return every dish.` },
+        ],
+      },
+    ],
     });
+  if (onText) stream.on("text", onText);
+  const response = await stream.finalMessage().catch((err) => {
+    // Output that was cut off or doesn't fit the schema counts as a failed read; API errors still throw.
+    if (err instanceof Anthropic.APIError) throw err;
+    return null;
+  });
   if (!response) return { menu: null, usage: { input_tokens: 0, output_tokens: 0 } };
   const menu = response.stop_reason === "end_turn" ? response.parsed_output : null;
   return { menu, usage: response.usage };
@@ -147,13 +173,20 @@ const readFailed = () => new MenuParseError("Couldn't read this menu. Try a shar
  * Reads the menu twice on MENU_MODEL (low and medium effort, in parallel) and
  * retries on MENU_RETRY_MODEL at high effort when the two reads disagree.
  * `strong` skips straight to the retry model, for when the person taps
- * "This looks wrong".
+ * "This looks wrong". `send` gets the first read's dishes as they arrive, and
+ * a "checking" event when the careful read starts.
  */
-export async function parseMenu(env: Env, photos: Photo[], strong = false): Promise<ParsedMenuResponse> {
+export async function parseMenu(
+  env: Env,
+  photos: Photo[],
+  strong = false,
+  send: Send = () => {},
+): Promise<ParsedMenuResponse> {
   if (photos.length === 0) throw new MenuParseError("Add at least one photo");
   if (photos.length > MAX_PHOTOS) throw new MenuParseError(`Up to ${MAX_PHOTOS} photos per menu`);
 
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+  const images = toImages(photos);
   const usage = { input_tokens: 0, output_tokens: 0 };
   const add = (u: { input_tokens: number; output_tokens: number }) => {
     usage.input_tokens += u.input_tokens;
@@ -161,26 +194,35 @@ export async function parseMenu(env: Env, photos: Photo[], strong = false): Prom
   };
 
   if (strong) {
-    const read = await readWith(client, env.MENU_RETRY_MODEL, "high", photos, true);
+    const read = await readWith(client, env.MENU_RETRY_MODEL, "high", images, true, preview(send));
     add(read.usage);
     if (!read.menu) throw readFailed();
     return { menu: read.menu, model: env.MENU_RETRY_MODEL, retried: true, usage };
   }
 
   const [low, medium] = await Promise.all([
-    readWith(client, env.MENU_MODEL, "low", photos, false),
-    readWith(client, env.MENU_MODEL, "medium", photos, false),
+    // The low-effort read finishes first, so it fills the reading screen.
+    readWith(client, env.MENU_MODEL, "low", images, false, preview(send)),
+    readWith(client, env.MENU_MODEL, "medium", images, false),
   ]);
   add(low.usage);
   add(medium.usage);
   const cheap = medium.menu ?? low.menu;
 
-  if (disagreement(low.menu, medium.menu).length === 0) {
+  const why = disagreement(low.menu, medium.menu);
+  console.log("menu quick reads", {
+    low: low.menu?.dishes.length ?? null,
+    medium: medium.menu?.dishes.length ?? null,
+    retry: why,
+  });
+  if (why.length === 0) {
     return { menu: cheap!, model: env.MENU_MODEL, retried: false, usage };
   }
 
-  const retry = await readWith(client, env.MENU_RETRY_MODEL, "high", photos, true);
+  send({ type: "checking" });
+  const retry = await readWith(client, env.MENU_RETRY_MODEL, "high", images, true);
   add(retry.usage);
+  console.log("menu careful read", { dishes: retry.menu?.dishes.length ?? null });
   const menu = retry.menu ?? cheap;
   if (!menu) throw readFailed();
   return { menu, model: retry.menu ? env.MENU_RETRY_MODEL : env.MENU_MODEL, retried: true, usage };
