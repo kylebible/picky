@@ -29,7 +29,8 @@ export const DishSchema = z.object({
   category: z.enum(CATEGORIES),
   // Price as printed, in the menu's currency. Null unless price_status is "listed".
   price: z.number().nullable(),
-  price_status: z.enum(["listed", "market_price", "not_listed"]),
+  // "unreadable": a price is printed but the photo doesn't show it clearly.
+  price_status: z.enum(["listed", "market_price", "not_listed", "unreadable"]),
   description: z.string().nullable(),
   ingredients: z.array(z.object({ name: z.string(), source: Source })),
   allergens: z.array(z.object({ allergen: z.enum(ALLERGENS), source: Source })),

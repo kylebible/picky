@@ -64,12 +64,20 @@ export function BackButton({ fallback, label = "Back" }: { fallback: string; lab
   );
 }
 
-/** The price cell at the end of a dish row: a price, an MP tag, or "No price listed". */
+/** The price cell at the end of a dish row: a price, an MP tag, "Price unclear" or "No price listed". */
 export function PriceCell({ dish, currency }: { dish: Dish; currency: string | null }) {
   if (dish.price_status === "market_price")
     return (
       <span className="tag-mp" title="Market price">
         MP
+      </span>
+    );
+  if (dish.price_status === "unreadable")
+    return (
+      <span className="no-price" title="A price is printed but we couldn't read it">
+        Price
+        <br />
+        unclear
       </span>
     );
   if (dish.price_status === "not_listed" || dish.price === null)
