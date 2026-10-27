@@ -33,13 +33,25 @@ const DRAWINGS: Record<Category, ReactNode> = {
   pasta: (
     <>
       {bowl}
-      <path d="M14 24c2-5 6-3 8-6s6-4 8-1 6-2 8 2" stroke={NOODLE} strokeWidth="2.6" strokeLinecap="round" fill="none" />
+      <path
+        d="M14 24c2-5 6-3 8-6s6-4 8-1 6-2 8 2"
+        stroke={NOODLE}
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        fill="none"
+      />
     </>
   ),
   noodles: (
     <>
       {bowl}
-      <path d="M14 24c2-3 4-3 6 0s4 3 6 0 4-3 6 0 3 2 4 0" stroke={NOODLE} strokeWidth="2.4" strokeLinecap="round" fill="none" />
+      <path
+        d="M14 24c2-3 4-3 6 0s4 3 6 0 4-3 6 0 3 2 4 0"
+        stroke={NOODLE}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        fill="none"
+      />
       <path d="M27 8l-5 16M33 9l-7 15" {...line} />
     </>
   ),
@@ -173,7 +185,13 @@ const DRAWINGS: Record<Category, ReactNode> = {
   taco: (
     <>
       <path d="M9 30c0-9 7-15 15-15s15 6 15 15z" fill={CHEESE} {...line} />
-      <path d="M13 22c2-2 4 0 6-2s4 1 6-1 4 1 6-1 3 1 4 2" stroke={GREEN} strokeWidth="2.4" strokeLinecap="round" fill="none" />
+      <path
+        d="M13 22c2-2 4 0 6-2s4 1 6-1 4 1 6-1 3 1 4 2"
+        stroke={GREEN}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        fill="none"
+      />
       <circle cx="20" cy="25" r="1.6" fill={TOMATO} />
       <circle cx="28" cy="24" r="1.6" fill={TOMATO} />
     </>

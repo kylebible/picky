@@ -24,7 +24,7 @@ export function Reading() {
 
   useEffect(() => {
     // Done: the store went back to idle with a menu.
-    if (reading.status === "idle") navigate(menu ? "/menu" : "/snap", { replace: true });
+    if (reading.status === "idle") navigate(menu ? "/picks" : "/snap", { replace: true });
   }, [reading.status, menu]);
 
   if (reading.status === "error") {
@@ -64,9 +64,7 @@ export function Reading() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <h1>Reading your menu</h1>
-        <p className="lede">
-          {pages > 1 ? `Reading ${pages} pages. ` : ""}This usually takes 10 to 20 seconds.
-        </p>
+        <p className="lede">{pages > 1 ? `Reading ${pages} pages. ` : ""}This usually takes 10 to 20 seconds.</p>
         <div
           className="progress"
           role="progressbar"
