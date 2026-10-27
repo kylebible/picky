@@ -95,10 +95,22 @@ export function DishScreen({ index }: { index: number }) {
 
       {profile && <ForYou {...forYou(scoreDish(dish, index, profile))} />}
 
-      {dish.options.length > 0 && (
+      {dish.sizes.length > 0 && (
         <div className="panel panel-pad" style={{ borderRadius: 20, gap: 8 }}>
-          <h2>Choices and add-ons</h2>
-          {dish.options.map((o) => (
+          <h2>Sizes</h2>
+          {dish.sizes.map((size) => (
+            <div key={size.name} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
+              <span>{capitalize(size.name)}</span>
+              {size.price !== null && <span className="price">{formatPrice(size.price, menu.menu.currency)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dish.add_ons.length > 0 && (
+        <div className="panel panel-pad" style={{ borderRadius: 20, gap: 8 }}>
+          <h2>Add-ons and choices</h2>
+          {dish.add_ons.map((o) => (
             <div key={o.name} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
               <span>{capitalize(o.name)}</span>
               {o.price_delta !== null && (

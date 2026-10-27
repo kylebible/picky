@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
-import { ALLERGENS, MenuSchema, type MenuStreamEvent } from "../shared/menu";
+import { ALLERGENS, MenuSchema, normalizeMenu, type MenuStreamEvent } from "../shared/menu";
 import { DIETS, TASTES } from "../shared/profile";
 import { TABLE_CODE } from "../shared/split";
 import { MAX_PHOTOS, MenuParseError, newTrace, parseMenu, toPhoto } from "./menu";
@@ -173,7 +173,10 @@ const table = (env: Env, code: string) => env.SPLIT_SESSION.get(env.SPLIT_SESSIO
 // Split it tables use a 4-digit code people can type. Try random codes until
 // one is free; with tables expiring after 12 hours, collisions are rare.
 app.post("/tables", async (c) => {
-  const parsed = CreateTableSchema.safeParse(await c.req.json().catch(() => null));
+  const body = await c.req.json().catch(() => null);
+  // Phones running an older build still send dishes with `options`.
+  if (body?.menu?.dishes) body.menu = normalizeMenu(body.menu);
+  const parsed = CreateTableSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "That menu can't be shared" }, 400);
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = String(crypto.getRandomValues(new Uint16Array(1))[0] % 10000).padStart(4, "0");

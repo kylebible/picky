@@ -152,7 +152,7 @@ export const TASTE_LABEL: Record<Taste, string> = {
 
 /** All the dish's words, lowercased, for keyword matching. */
 function dishText(dish: Dish) {
-  return [dish.name, dish.description ?? "", ...dish.ingredients.map((i) => i.name), ...dish.options.map((o) => o.name)]
+  return [dish.name, dish.description ?? "", ...dish.ingredients.map((i) => i.name), ...dish.add_ons.map((o) => o.name)]
     .join(" ")
     .toLowerCase();
 }

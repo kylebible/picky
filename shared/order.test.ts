@@ -13,7 +13,7 @@ function dish(price: number | null, price_status: Dish["price_status"] = "listed
     ingredients: [],
     allergens: [],
     diet_tags: [],
-    options: [],
+    sizes: [], add_ons: [],
   };
 }
 

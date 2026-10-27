@@ -12,7 +12,8 @@ const dish = (name: string, description: string | null = null): Dish => ({
   ingredients: [{ name: "garlic", source: "stated" }],
   allergens: [{ allergen: "milk", source: "likely" }],
   diet_tags: ["vegetarian"],
-  options: [{ name: "Add {extra} cheese [big]", price_delta: 2 }],
+  sizes: [{ name: "Small", price: 12.5 }, { name: "Large", price: 15 }],
+  add_ons: [{ name: "Add {extra} cheese [big]", price_delta: 2 }],
 });
 
 const menu: Menu = {
