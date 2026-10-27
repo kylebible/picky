@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { ParsedMenuResponse } from "../../shared/menu";
+import { remapOrderItems } from "./orderStore";
 import { release, type MenuPhoto } from "./photos";
 
 // The current menu and the read in progress. The parsed menu is kept in
@@ -59,12 +60,14 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
   const form = new FormData();
   photos.forEach((p, i) => form.append("photos", new File([p.blob], `page-${i + 1}.jpg`, { type: "image/jpeg" })));
   try {
-    const res = await fetch(`/api/parse-menu${strong ? "?strong=1" : ""}`, { method: "POST", body: form, signal }).catch(
-      (err) => {
-        if (signal.aborted) throw err;
-        throw new Error("We couldn't reach Picky. Check your connection and try again.");
-      },
-    );
+    const res = await fetch(`/api/parse-menu${strong ? "?strong=1" : ""}`, {
+      method: "POST",
+      body: form,
+      signal,
+    }).catch((err) => {
+      if (signal.aborted) throw err;
+      throw new Error("We couldn't reach Picky. Check your connection and try again.");
+    });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error ?? "Something went wrong reading the menu.");
     const menu = body as ParsedMenuResponse;
@@ -73,6 +76,13 @@ export async function readMenu(photos: MenuPhoto[], { strong = false } = {}) {
     } catch {
       // Storage full or blocked: the menu still works until the page reloads.
     }
+    // A re-read of the same photos keeps the order, matching dishes by name;
+    // a new menu starts a new one.
+    const before = strong ? (state.menu?.menu.dishes ?? []) : [];
+    remapOrderItems((i) => {
+      const name = before[i]?.name.toLowerCase();
+      return name ? menu.menu.dishes.findIndex((d) => d.name.toLowerCase() === name) : -1;
+    });
     set({ menu, reading: { status: "idle" } });
     return true;
   } catch (err) {

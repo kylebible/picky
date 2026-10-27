@@ -1,6 +1,12 @@
 import type { Dish } from "../../shared/menu";
 import { Plate } from "../components/Plate";
-import { PriceCell, Redirect, Wordmark } from "../components/ui";
+import { EMPTY_PROFILE } from "../../shared/profile";
+import { scoreDish } from "../../shared/rank";
+import { MenuHeader } from "../components/MenuHeader";
+import { OrderBar } from "../components/Order";
+import { PriceCell, Redirect, WarnIcon } from "../components/ui";
+import { useProfile } from "../lib/profileStore";
+import { allergenWarning } from "../lib/reasons";
 import { readMenu, useMenuStore } from "../lib/menuStore";
 import { navigate } from "../lib/router";
 
@@ -33,6 +39,7 @@ export function useReread() {
 
 export function MenuScreen() {
   const { menu } = useMenuStore();
+  const profile = useProfile() ?? EMPTY_PROFILE;
   const reread = useReread();
   if (!menu) return <Redirect to="/" />;
   const { restaurant_name, currency, dishes } = menu.menu;
@@ -40,13 +47,7 @@ export function MenuScreen() {
 
   return (
     <main className="screen" style={{ gap: 14 }}>
-      <div className="topbar">
-        <Wordmark />
-        <button type="button" className="link-btn" onClick={() => navigate("/snap")}>
-          New menu
-        </button>
-      </div>
-      <h1 style={{ fontSize: 28, letterSpacing: -0.6 }}>{restaurant_name ?? "Your menu"}</h1>
+      <MenuHeader title={restaurant_name ?? "Your menu"} tab="menu" />
 
       {sections.length > 1 && (
         <nav className="jump" aria-label="Menu sections">
@@ -75,24 +76,33 @@ export function MenuScreen() {
             {s.title}
           </h2>
           <div className="panel" style={{ borderRadius: 20 }}>
-            {s.dishes.map(({ dish, index }) => (
-              <a
-                key={index}
-                className="row"
-                href={`/dish/${index}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate(`/dish/${index}`);
-                }}
-              >
-                <Plate category={dish.category} />
-                <div className="row-main">
-                  <div className="row-name">{dish.name}</div>
-                  {dish.description && <div className="row-sub">{dish.description}</div>}
-                </div>
-                <PriceCell dish={dish} currency={currency} />
-              </a>
-            ))}
+            {s.dishes.map(({ dish, index }) => {
+              const warning = allergenWarning(scoreDish(dish, index, profile));
+              return (
+                <a
+                  key={index}
+                  className="row"
+                  href={`/dish/${index}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate(`/dish/${index}`);
+                  }}
+                >
+                  <Plate category={dish.category} />
+                  <div className="row-main">
+                    <div className="row-name">{dish.name}</div>
+                    {dish.description && <div className="row-sub">{dish.description}</div>}
+                    {warning && (
+                      <div className="warn-tag">
+                        <WarnIcon />
+                        {warning}
+                      </div>
+                    )}
+                  </div>
+                  <PriceCell dish={dish} currency={currency} />
+                </a>
+              );
+            })}
           </div>
         </section>
       ))}
@@ -103,6 +113,7 @@ export function MenuScreen() {
       <p className="small center" style={{ margin: 0 }}>
         Allergens and ingredients marked as our guess aren't on the menu. Always check with your server.
       </p>
+      <OrderBar />
     </main>
   );
 }

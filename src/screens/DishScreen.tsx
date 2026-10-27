@@ -1,12 +1,18 @@
 import { CATEGORY_LABEL } from "../../shared/categories";
+import { AddButton } from "../components/Order";
 import { Plate } from "../components/Plate";
 import { BackButton, PriceCell, Redirect, WarnIcon } from "../components/ui";
 import { ALLERGEN_LABEL, capitalize, formatPrice } from "../lib/format";
 import { useMenuStore } from "../lib/menuStore";
+import { EMPTY_PROFILE } from "../../shared/profile";
+import { scoreDish } from "../../shared/rank";
+import { useProfile } from "../lib/profileStore";
+import { reasons } from "../lib/reasons";
 import { useReread } from "./MenuScreen";
 
 export function DishScreen({ index }: { index: number }) {
   const { menu } = useMenuStore();
+  const profile = useProfile();
   const reread = useReread();
   const dish = menu?.menu.dishes[index];
   if (!menu || !dish) return <Redirect to={menu ? "/menu" : "/"} />;
@@ -20,8 +26,12 @@ export function DishScreen({ index }: { index: number }) {
   return (
     <main className="screen" style={{ gap: 14 }}>
       <div className="dish-hero">
-        <BackButton fallback="/menu" label="Back to the menu" />
-        <Plate category={dish.category} size={150} label={`Drawing of ${CATEGORY_LABEL[dish.category].toLowerCase()}`} />
+        <BackButton fallback="/picks" label="Back to the menu" />
+        <Plate
+          category={dish.category}
+          size={150}
+          label={`Drawing of ${CATEGORY_LABEL[dish.category].toLowerCase()}`}
+        />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
@@ -31,7 +41,9 @@ export function DishScreen({ index }: { index: number }) {
             <PriceCell dish={dish} currency={menu.menu.currency} />
           </div>
         </div>
-        {dish.description && <div style={{ fontSize: 15, color: "var(--muted-strong)" }}>The menu says: "{dish.description}"</div>}
+        {dish.description && (
+          <div style={{ fontSize: 15, color: "var(--muted-strong)" }}>The menu says: "{dish.description}"</div>
+        )}
       </div>
 
       {statedAllergens.length > 0 && (
@@ -81,13 +93,17 @@ export function DishScreen({ index }: { index: number }) {
         </div>
       )}
 
+      {profile && <ForYou {...forYou(scoreDish(dish, index, profile))} />}
+
       {dish.options.length > 0 && (
         <div className="panel panel-pad" style={{ borderRadius: 20, gap: 8 }}>
           <h2>Choices and add-ons</h2>
           {dish.options.map((o) => (
             <div key={o.name} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
               <span>{capitalize(o.name)}</span>
-              {o.price_delta !== null && <span className="price">+{formatPrice(o.price_delta, menu.menu.currency)}</span>}
+              {o.price_delta !== null && (
+                <span className="price">+{formatPrice(o.price_delta, menu.menu.currency)}</span>
+              )}
             </div>
           ))}
         </div>
@@ -106,6 +122,29 @@ export function DishScreen({ index }: { index: number }) {
       <button type="button" className="link-btn" style={{ alignSelf: "center" }} onClick={reread}>
         This looks wrong
       </button>
+      <div className="grow" />
+      <AddButton dish={index} big />
     </main>
+  );
+}
+
+function forYou(r: ReturnType<typeof scoreDish>) {
+  const { good, bad } = reasons(r);
+  if (r.allergens.length) {
+    const sunk = "We moved this down your list because it might have something you can't eat.";
+    return { verdict: "For you: be careful", text: [...good, sunk].join(" ") };
+  }
+  if (bad.length && good.length) return { verdict: "For you: maybe", text: [...good, ...bad].join(" ") };
+  if (bad.length) return { verdict: "For you: probably not", text: bad.join(" ") };
+  if (good.length) return { verdict: "For you: yes", text: good.join(" ") };
+  return { verdict: "For you: fine", text: "Nothing here clashes with your tastes." };
+}
+
+function ForYou({ verdict, text }: { verdict: string; text: string }) {
+  return (
+    <div className="panel panel-pad" style={{ borderRadius: 20, gap: 4 }}>
+      <h2>{verdict}</h2>
+      <div style={{ fontSize: 15, color: "var(--muted-strong)", lineHeight: 1.4 }}>{text}</div>
+    </div>
   );
 }

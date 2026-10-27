@@ -30,7 +30,7 @@ export function Reading() {
 
   useEffect(() => {
     // Done: the store went back to idle with a menu.
-    if (reading.status === "idle") navigate(menu ? "/menu" : "/snap", { replace: true });
+    if (reading.status === "idle") navigate(menu ? "/picks" : "/snap", { replace: true });
   }, [reading.status, menu]);
 
   if (reading.status === "error") {

@@ -110,7 +110,12 @@ export function Capture() {
   return (
     <main className="screen camera">
       <div className="topbar">
-        <button type="button" className="round-btn" aria-label="Close camera" onClick={() => navigate("/", { replace: true })}>
+        <button
+          type="button"
+          className="round-btn"
+          aria-label="Close camera"
+          onClick={() => navigate("/", { replace: true })}
+        >
           <CloseIcon />
         </button>
         <div className="display" style={{ fontSize: 18 }}>
@@ -145,7 +150,9 @@ export function Capture() {
             <span className="corner tr" />
             <span className="corner bl" />
             <span className="corner br" />
-            <div className="hint">{full ? "That's the most pages we can read at once" : "Fit one page inside the corners"}</div>
+            <div className="hint">
+              {full ? "That's the most pages we can read at once" : "Fit one page inside the corners"}
+            </div>
           </>
         )}
       </div>
