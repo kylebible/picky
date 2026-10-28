@@ -126,7 +126,7 @@ export function Reading() {
       <div className="grow" />
       {dishes.length === 0 && (
         <div className="note">
-          While you wait: we'll mark anything we're unsure about, like a missing price, so you know what to ask.
+          You can leave the app while we read. We'll pick up where we left off when you come back, and the menu will be in Recent menus.
         </div>
       )}
     </main>

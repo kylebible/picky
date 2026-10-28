@@ -56,7 +56,7 @@ export type ParsedMenuResponse = {
   usage: { input_tokens: number; output_tokens: number };
 };
 
-/** Lines of the newline-delimited JSON that /api/parse-menu streams back. */
+/** Lines of the newline-delimited JSON that /api/scans/:id/events streams back (each also carries a `seq`). */
 export type MenuStreamEvent =
   // The restaurant name and currency, once the first read has written them.
   | { type: "menu"; restaurant_name: string | null; currency: string | null }

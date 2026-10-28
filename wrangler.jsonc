@@ -19,9 +19,15 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "SPLIT_SESSION", "class_name": "SplitSession" }]
+    "bindings": [
+      { "name": "SPLIT_SESSION", "class_name": "SplitSession" },
+      { "name": "MENU_SCAN", "class_name": "MenuScan" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SplitSession"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SplitSession"] },
+    { "tag": "v2", "new_sqlite_classes": ["MenuScan"] }
+  ],
   "vars": {
     "MENU_MODEL": "claude-haiku-5-5",
     "MENU_RETRY_MODEL": "claude-opus-5-5"

@@ -26,7 +26,7 @@ Rules:
 
 export class MenuParseError extends Error {}
 
-type Photo = { data: ArrayBuffer; type: ImageType };
+export type Photo = { data: ArrayBuffer; type: ImageType };
 
 export function toPhoto(file: File): Promise<Photo> {
   if (!IMAGE_TYPES.includes(file.type as ImageType)) {
