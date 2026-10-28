@@ -1,6 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Dish } from "../../shared/menu";
-import { estimate, itemPrice, lineTotal, type OrderItem } from "../../shared/order";
+import {
+  choicesLabel,
+  combineOrders,
+  estimate,
+  itemPrice,
+  lineId,
+  lineTotal,
+  type OrderItem,
+} from "../../shared/order";
+import { Choices } from "../components/Choices";
+import type { Member } from "../../shared/split";
 import { MenuHeader } from "../components/MenuHeader";
 import { ShareMoreBar } from "../components/Order";
 import { Plate } from "../components/Plate";
@@ -9,6 +19,7 @@ import { formatPrice } from "../lib/format";
 import { useMenuStore } from "../lib/menuStore";
 import { setTax, setTip, updateItem, useOrder } from "../lib/orderStore";
 import { navigate } from "../lib/router";
+import { joinTable, loadTable, setSameCheck, useTable } from "../lib/tableStore";
 
 const TIPS = [15, 18, 20];
 const money = (n: number, currency: string | null) =>
@@ -17,6 +28,14 @@ const money = (n: number, currency: string | null) =>
 export function OrderScreen() {
   const { menu } = useMenuStore();
   const { items, taxPercent, tipPercent } = useOrder();
+  const table = useTable();
+  useEffect(() => {
+    // Reconnect to a Split it table after a reload, for the shared check.
+    if (table.code) {
+      joinTable(table.code);
+      loadTable(table.code).catch(() => {});
+    }
+  }, [table.code]);
   const [otherTip, setOtherTip] = useState(!TIPS.includes(tipPercent));
   if (!menu) return <Redirect to="/" />;
   const { restaurant_name, currency, dishes } = menu.menu;
@@ -29,6 +48,9 @@ export function OrderScreen() {
   };
   const e = estimate(items, dishes, parseFloat(taxPercent), tipPercent);
   const unpricedNames = e.unpriced.map((i) => dishes[i]?.name).filter(Boolean);
+  // At a Split it table for this menu with someone else: offer the shared check.
+  const me = table.members.find((m) => m.id === table.you);
+  const atTable = me && table.members.some((m) => m.id !== me.id && m.name);
 
   return (
     <main className="screen" style={{ gap: 14 }}>
@@ -46,7 +68,9 @@ export function OrderScreen() {
           <div className="panel" style={{ borderRadius: 20 }}>
             {items.map((item) => {
               const dish = dishes[item.dish];
-              return dish ? <OrderRow key={item.dish} item={item} dish={dish} fmt={fmt} currency={currency} /> : null;
+              return dish ? (
+                <OrderRow key={lineId(item)} item={item} dish={dish} fmt={fmt} currency={currency} />
+              ) : null;
             })}
           </div>
 
@@ -131,10 +155,116 @@ export function OrderScreen() {
           </div>
         </>
       )}
+      {atTable && (
+        <SameCheck
+          me={me}
+          members={table.members}
+          orders={{ ...table.orders, [me.id]: items }}
+          dishes={dishes}
+          tax={parseFloat(taxPercent)}
+          tip={tipPercent}
+          fmt={fmt}
+        />
+      )}
       <div className="grow" />
       <ShareMoreBar />
     </main>
   );
+}
+
+/** One check for everyone at the table who's on it, so they can see what they'll pay together. */
+function SameCheck({
+  me,
+  members,
+  orders,
+  dishes,
+  tax,
+  tip,
+  fmt,
+}: {
+  me: Member;
+  members: Member[];
+  orders: Record<string, OrderItem[]>;
+  dishes: Dish[];
+  tax: number;
+  tip: number;
+  fmt: (n: number) => string;
+}) {
+  const others = members.filter((m) => m.id !== me.id && m.name);
+  const onCheck = members.filter((m) => m.sameCheck);
+  const othersOn = onCheck.filter((m) => m.id !== me.id);
+  const combined = combineOrders(onCheck.map((m) => orders[m.id] ?? []));
+  const e = estimate(combined, dishes, tax, tip);
+  const names = (list: Member[]) => listPeople(list.map((m) => m.name || "someone"));
+
+  return (
+    <div className="panel panel-pad" style={{ borderRadius: 20, gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <h2>On the same check?</h2>
+        <div style={{ fontSize: 14, color: "var(--muted)" }}>
+          {me.sameCheck
+            ? othersOn.length
+              ? `You're on one check with ${names(othersOn)}.`
+              : `You're on the check. Once ${others.length === 1 ? others[0].name : "someone else"} joins it, you'll see your total together.`
+            : othersOn.length
+              ? `${names(othersOn)} ${othersOn.length === 1 ? "is" : "are"} on one check. Join to see your total together.`
+              : "Paying together? Put yourself on one check to see your total together."}
+        </div>
+      </div>
+      <button
+        type="button"
+        className={me.sameCheck ? "btn btn-secondary" : "btn btn-outline"}
+        aria-pressed={me.sameCheck}
+        onClick={() => setSameCheck(!me.sameCheck)}
+      >
+        {me.sameCheck
+          ? "Take me off the check"
+          : othersOn.length
+            ? `Join ${names(othersOn)}'s check`
+            : "Put me on one check"}
+      </button>
+      {me.sameCheck && othersOn.length > 0 && (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {combined.map((item) => {
+              const dish = dishes[item.dish];
+              const line = dish && lineTotal(item, dish);
+              return dish ? (
+                <div className="sum-row" key={lineId(item)} style={{ fontSize: 15 }}>
+                  <span>
+                    {item.quantity > 1 ? `${item.quantity} × ` : ""}
+                    {dish.name}
+                    {choicesLabel(item) && (
+                      <span style={{ color: "var(--muted)" }}>{`, ${choicesLabel(item).toLowerCase()}`}</span>
+                    )}
+                  </span>
+                  <span>{line === null ? "No price" : fmt(line)}</span>
+                </div>
+              ) : null;
+            })}
+          </div>
+          <div className="total-row">
+            <span className="display" style={{ fontSize: 18 }}>
+              Together about
+            </span>
+            <span className="display" style={{ fontSize: 26 }}>
+              {fmt(e.total)}
+            </span>
+          </div>
+          <div className="small" style={{ color: "var(--muted)" }}>
+            With your tax and tip. Shared dishes count once, at full price.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function listPeople(names: string[]) {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 function listNames(names: string[]) {
@@ -154,23 +284,50 @@ function OrderRow({
   currency: string | null;
 }) {
   const [editingPrice, setEditingPrice] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const id = lineId(item);
   const line = lineTotal(item, dish);
   const price = itemPrice(item, dish);
-  const needsPrice = dish.price_status !== "listed" || dish.price === null;
+  const sizePrice = item.size ? dish.sizes.find((s) => s.name === item.size)?.price : undefined;
+  const needsPrice =
+    sizePrice === undefined || sizePrice === null ? dish.price_status !== "listed" || dish.price === null : false;
+  const hasChoices = dish.sizes.length > 0 || dish.add_ons.length > 0;
+  const picked = choicesLabel({ size: item.size ?? dish.sizes[0]?.name, addOns: item.addOns });
 
   return (
     <div className="row" style={{ cursor: "default", alignItems: "flex-start" }}>
       <Plate category={dish.category} />
       <div className="row-main">
         <div className="row-name">{dish.name}</div>
+        {hasChoices && (
+          <button
+            type="button"
+            className="share-toggle"
+            aria-expanded={choosing}
+            onClick={() => setChoosing(!choosing)}
+          >
+            {picked ? `${capitalizeFirst(picked)}. ` : ""}
+            <span className="choices-btn">{choosing ? "Done" : picked ? "Change" : "Pick a size or add-ons"}</span>
+          </button>
+        )}
+        {choosing && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 0 8px" }}>
+            <Choices
+              dish={dish}
+              currency={currency}
+              picked={{ size: item.size, addOns: item.addOns ?? [] }}
+              onChange={(next) => updateItem(id, { size: next.size, addOns: next.addOns })}
+            />
+          </div>
+        )}
         <button
           type="button"
           className="share-toggle"
           aria-pressed={item.shared}
-          onClick={() => updateItem(item.dish, { shared: !item.shared })}
+          onClick={() => updateItem(id, { shared: !item.shared })}
         >
           {item.shared
-            ? `Shared, half of ${price === null ? "the price" : formatPrice(price * item.quantity, currency)}. Undo`
+            ? `Shared${(item.shareWith ?? 2) > 2 ? ` ${item.shareWith} ways` : ", half"} of ${price === null ? "the price" : formatPrice(price * item.quantity, currency)}. Undo`
             : "Just for you. Sharing it?"}
         </button>
         <div className="order-line">
@@ -178,7 +335,7 @@ function OrderRow({
             <button
               type="button"
               aria-label={`One fewer ${dish.name}`}
-              onClick={() => updateItem(item.dish, { quantity: item.quantity - 1 })}
+              onClick={() => updateItem(id, { quantity: item.quantity - 1 })}
             >
               −
             </button>
@@ -186,7 +343,7 @@ function OrderRow({
             <button
               type="button"
               aria-label={`One more ${dish.name}`}
-              onClick={() => updateItem(item.dish, { quantity: item.quantity + 1 })}
+              onClick={() => updateItem(id, { quantity: item.quantity + 1 })}
             >
               +
             </button>
@@ -207,20 +364,14 @@ function OrderRow({
               onSubmit={(ev) => {
                 ev.preventDefault();
                 const value = parseFloat(new FormData(ev.currentTarget).get("price") as string);
-                updateItem(item.dish, { price: Number.isFinite(value) && value > 0 ? value : undefined });
+                updateItem(id, { price: Number.isFinite(value) && value > 0 ? value : undefined });
                 setEditingPrice(false);
               }}
             >
-              <label className="visually-hidden" htmlFor={`price-${item.dish}`}>
+              <label className="visually-hidden" htmlFor={`price-${id}`}>
                 Price of {dish.name}
               </label>
-              <input
-                id={`price-${item.dish}`}
-                name="price"
-                inputMode="decimal"
-                autoFocus
-                defaultValue={item.price ?? ""}
-              />
+              <input id={`price-${id}`} name="price" inputMode="decimal" autoFocus defaultValue={item.price ?? ""} />
               <button type="submit" className="btn btn-outline" style={{ height: 36 }}>
                 Save
               </button>

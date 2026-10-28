@@ -4,18 +4,32 @@ import { useMenuStore } from "../lib/menuStore";
 import { addToOrder, orderCount, useOrder } from "../lib/orderStore";
 import { navigate } from "../lib/router";
 
-/** "Add to my order", or a count and "add one more" once it's in. */
-export function AddButton({ dish, big = false }: { dish: number; big?: boolean }) {
+/** "Add to my order", or a count and "add one more" once it's in. Adds with the size and add-ons picked. */
+export function AddButton({
+  dish,
+  big = false,
+  size,
+  addOns,
+  price,
+}: {
+  dish: number;
+  big?: boolean;
+  size?: string;
+  addOns?: string[];
+  /** The price with the picked choices, shown on the button. */
+  price?: string | null;
+}) {
   const { items } = useOrder();
-  const inOrder = items.find((i) => i.dish === dish);
+  const count = items.filter((i) => i.dish === dish).reduce((n, i) => n + i.quantity, 0);
   return (
     <button
       type="button"
       className={big ? "btn btn-primary" : "btn btn-outline"}
       style={{ width: "100%" }}
-      onClick={() => addToOrder(dish)}
+      onClick={() => addToOrder(dish, { size, addOns })}
     >
-      {inOrder ? `${inOrder.quantity} in your order, add one more` : "Add to my order"}
+      {count ? `${count} in your order, add one more` : "Add to my order"}
+      {price ? `, ${price}` : ""}
     </button>
   );
 }
