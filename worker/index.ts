@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { ALLERGENS, MenuSchema, normalizeMenu, type MenuStreamEvent } from "../shared/menu";
-import { DIETS } from "../shared/profile";
+import { DIETS, TASTES } from "../shared/profile";
 import { TABLE_CODE } from "../shared/split";
 import { MAX_PHOTOS, MenuParseError, newTrace, parseMenu, toPhoto } from "./menu";
 
@@ -164,6 +164,8 @@ const CreateTableSchema = z.object({
   name: z.string().trim().min(1).max(40),
   allergies: z.array(z.enum(ALLERGENS)),
   diet: z.enum(DIETS),
+  nopes: z.array(z.enum(TASTES)).default([]),
+  dislikes: z.array(z.string().max(40)).max(40).default([]),
 });
 
 const table = (env: Env, code: string) => env.SPLIT_SESSION.get(env.SPLIT_SESSION.idFromName(code));

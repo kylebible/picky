@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { Swipe } from "../../shared/match";
-import type { Allergen, Diet } from "../../shared/profile";
-import type { ClientMessage, Member, ServerMessage, TableInfo } from "../../shared/split";
+import type { OrderItem } from "../../shared/order";
+import type { ClientMessage, CreateTable, Member, ServerMessage, TableInfo } from "../../shared/split";
+import { orderItems, watchOrder } from "./orderStore";
 
 // The Split it table this phone is at, and its live connection. The code is
 // remembered so a reload or a locked phone can pick up where it left off.
@@ -16,6 +17,7 @@ type State = {
   members: Member[];
   swipes: Swipe[];
   matches: string[];
+  orders: Record<string, OrderItem[]>;
   /** The newest match, for the banner on the swipe screen. */
   latestMatch: string | null;
   error: string | null;
@@ -30,6 +32,7 @@ const EMPTY: State = {
   members: [],
   swipes: [],
   matches: [],
+  orders: {},
   latestMatch: null,
   error: null,
 };
@@ -73,12 +76,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** Creates a table for the current menu and returns its code. */
-export async function createTable(body: {
-  menu: TableInfo["menu"];
-  name: string;
-  allergies: Allergen[];
-  diet: Diet;
-}): Promise<string> {
+export async function createTable(body: CreateTable): Promise<string> {
   const { code } = await api<{ code: string }>("/api/tables", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -122,11 +120,18 @@ function connect(code: string) {
     retry = 0;
     set({ connection: "open" });
     if (hello) ws.send(JSON.stringify(hello));
+    sendOrder(orderItems());
   };
   ws.onmessage = (ev) => {
     const message = JSON.parse(ev.data) as ServerMessage;
     if (message.type === "state") {
-      set({ you: message.you, members: message.members, swipes: message.swipes, matches: message.matches });
+      set({
+        you: message.you,
+        members: message.members,
+        swipes: message.swipes,
+        matches: message.matches,
+        orders: message.orders ?? {},
+      });
     } else if (message.type === "match") {
       set({ latestMatch: message.dishId });
     } else if (message.type === "error") {
@@ -156,7 +161,27 @@ export function swipe(dishId: string, liked: boolean) {
       { userId: state.you, dishId, liked },
     ],
   });
-  socket?.send(JSON.stringify({ type: "swipe", dishId, liked } satisfies ClientMessage));
+  send({ type: "swipe", dishId, liked });
+}
+
+function send(message: ClientMessage) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
+function sendOrder(items: OrderItem[]) {
+  send({ type: "order", items });
+}
+
+// Keep the table's copy of this phone's order current, for the shared check.
+watchOrder((items) => {
+  if (state.code) sendOrder(items);
+});
+
+/** Puts you on, or takes you off, the table's shared check. */
+export function setSameCheck(same: boolean) {
+  if (!state.you) return;
+  set({ members: state.members.map((m) => (m.id === state.you ? { ...m, sameCheck: same } : m)) });
+  send({ type: "check", same });
 }
 
 export const dismissMatch = () => set({ latestMatch: null });

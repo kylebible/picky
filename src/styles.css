@@ -606,3 +606,8 @@ body:has(.camera) { background: var(--camera); }
   .swipe-card { animation: deal 0.25s ease-out; }
   @keyframes deal { from { transform: translateY(12px) rotate(0deg); opacity: 0; } }
 }
+
+/* Size and add-on pickers, on the dish screen and in the order. */
+.choice-group { display: flex; flex-direction: column; gap: 8px; }
+.choice-price { font-size: 13px; opacity: 0.8; font-weight: 400; }
+.choices-btn { color: var(--primary); font-weight: 700; }

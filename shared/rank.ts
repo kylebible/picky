@@ -163,6 +163,9 @@ function mentions(text: string, words: string[]) {
   );
 }
 
+/** Whether the dish mentions any of these words, such as dislikes from someone's notes. */
+export const mentionsAny = (dish: Dish, words: string[]) => words.length > 0 && mentions(dishText(dish), words);
+
 const hasTag = (dish: Dish, ...tags: string[]) => dish.diet_tags.some((t) => tags.includes(t.toLowerCase()));
 
 export function matchesTaste(dish: Dish, taste: Taste, text = dishText(dish)): boolean {

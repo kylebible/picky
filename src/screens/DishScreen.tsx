@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { CATEGORY_LABEL } from "../../shared/categories";
+import { choicesLabel, itemPrice } from "../../shared/order";
+import { Choices, type Picked } from "../components/Choices";
 import { AddButton } from "../components/Order";
 import { Plate } from "../components/Plate";
 import { BackButton, PriceCell, Redirect, WarnIcon } from "../components/ui";
@@ -15,7 +18,10 @@ export function DishScreen({ index }: { index: number }) {
   const profile = useProfile();
   const reread = useReread();
   const dish = menu?.menu.dishes[index];
+  const [picked, setPicked] = useState<Picked>({ addOns: [] });
+  useEffect(() => setPicked({ addOns: [] }), [index]);
   if (!menu || !dish) return <Redirect to={menu ? "/menu" : "/"} />;
+  const price = itemPrice({ dish: index, quantity: 1, shared: false, ...picked }, dish);
 
   const stated = dish.ingredients.filter((i) => i.source === "stated");
   const guessed = dish.ingredients.filter((i) => i.source === "likely");
@@ -95,29 +101,10 @@ export function DishScreen({ index }: { index: number }) {
 
       {profile && <ForYou {...forYou(scoreDish(dish, index, profile))} />}
 
-      {dish.sizes.length > 0 && (
-        <div className="panel panel-pad" style={{ borderRadius: 20, gap: 8 }}>
-          <h2>Sizes</h2>
-          {dish.sizes.map((size) => (
-            <div key={size.name} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
-              <span>{capitalize(size.name)}</span>
-              {size.price !== null && <span className="price">{formatPrice(size.price, menu.menu.currency)}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {dish.add_ons.length > 0 && (
-        <div className="panel panel-pad" style={{ borderRadius: 20, gap: 8 }}>
-          <h2>Add-ons and choices</h2>
-          {dish.add_ons.map((o) => (
-            <div key={o.name} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
-              <span>{capitalize(o.name)}</span>
-              {o.price_delta !== null && (
-                <span className="price">+{formatPrice(o.price_delta, menu.menu.currency)}</span>
-              )}
-            </div>
-          ))}
+      {(dish.sizes.length > 0 || dish.add_ons.length > 0) && (
+        <div className="panel panel-pad" style={{ borderRadius: 20, gap: 14 }}>
+          <h2>Make it yours</h2>
+          <Choices dish={dish} currency={menu.menu.currency} picked={picked} onChange={setPicked} />
         </div>
       )}
 
@@ -135,7 +122,13 @@ export function DishScreen({ index }: { index: number }) {
         This looks wrong
       </button>
       <div className="grow" />
-      <AddButton dish={index} big />
+      <AddButton
+        dish={index}
+        big
+        size={picked.size}
+        addOns={picked.addOns}
+        price={choicesLabel(picked) && price !== null ? formatPrice(price, menu.menu.currency) : null}
+      />
     </main>
   );
 }
