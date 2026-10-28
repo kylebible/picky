@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Dish, Menu, MenuStreamEvent, ParsedMenuResponse } from "../../shared/menu";
+import { normalizeMenu, type Dish, type Menu, type MenuStreamEvent, type ParsedMenuResponse } from "../../shared/menu";
 import { remapOrderItems } from "./orderStore";
 import { release, type MenuPhoto } from "./photos";
 import { forgetTable } from "./tableStore";
@@ -63,7 +63,9 @@ const STORAGE_KEY = "picky.menu";
 function loadMenu(): ParsedMenuResponse | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as ParsedMenuResponse;
+    return { ...saved, menu: normalizeMenu(saved.menu) };
   } catch {
     return null;
   }
@@ -201,7 +203,8 @@ function saveMenu(menu: ParsedMenuResponse) {
 }
 
 /** Uses a menu someone else read, for a tablemate joining a Split it table. */
-export function adoptMenu(menu: Menu) {
+export function adoptMenu(shared: Menu) {
+  const menu = normalizeMenu(shared);
   if (state.menu && JSON.stringify(state.menu.menu) === JSON.stringify(menu)) return;
   remapOrderItems(() => -1);
   saveMenu({ menu, model: "shared", retried: false, usage: { input_tokens: 0, output_tokens: 0 } });

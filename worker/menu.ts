@@ -19,8 +19,8 @@ Rules:
 - ingredients: mark each one "stated" when the menu text names it, or "likely" when you infer it from the dish (for example garlic in garlic bread is stated, flour is likely).
 - allergens: only from the allowed list, each marked "stated" or "likely" the same way. Prefer listing a likely allergen over leaving it out.
 - diet_tags: short lowercase tags such as vegetarian, vegan, gluten-free, pescatarian, spicy, when the menu marks them or they clearly apply.
-- Sizes: when a dish lists several sizes with their own prices (for example "Big 6.29, Real Big 8.99" or "cup / bowl"), price is the smallest size's price, and each larger size is an option named after the size with price_delta = its price minus the smallest price.
-- options: add-ons and choices printed with the dish (such as "Add chicken 3.79"), with price_delta when an upcharge is printed. An add-on's price never replaces the dish's own price.
+- sizes: when a dish lists several sizes with their own prices (for example "Big 6.29, Real Big 8.99", "cup / bowl", "6 pc / 12 pc", "glass / bottle"), list every size in printed order with its own full price, smallest first. price is then the smallest size's price. Leave sizes empty when the dish has one size.
+- add_ons: extras, swaps and choices printed with the dish or its section (such as "Add chicken 3.79", "sub tofu", "choice of beef or shrimp +2"), with price_delta when an upcharge is printed, else null. A section-wide add-on ("Add chicken to any salad 3.79") goes on every dish in that section. An add-on's price never replaces the dish's own price.
 - currency: ISO code inferred from symbols or location, or null if unclear.
 - Copy names as printed. If a menu is not in English, keep the original name and translate the description into English.`;
 

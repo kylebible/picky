@@ -35,7 +35,9 @@ export const DishSchema = z.object({
   ingredients: z.array(z.object({ name: z.string(), source: Source })),
   allergens: z.array(z.object({ allergen: z.enum(ALLERGENS), source: Source })),
   diet_tags: z.array(z.string()),
-  options: z.array(z.object({ name: z.string(), price_delta: z.number().nullable() })),
+  // Every size with its own price, the default or smallest first; empty when there's one size.
+  sizes: z.array(z.object({ name: z.string(), price: z.number().nullable() })),
+  add_ons: z.array(z.object({ name: z.string(), price_delta: z.number().nullable() })),
 });
 
 export const MenuSchema = z.object({
@@ -67,3 +69,19 @@ export type MenuStreamEvent =
   | { type: "done"; result: ParsedMenuResponse }
   // `detail` is the technical reason, shown small under the message while Picky is in beta.
   | { type: "error"; message: string; detail?: string };
+
+/**
+ * Upgrades a menu saved before dishes had `sizes` and `add_ons` (they had
+ * `options`), so menus kept on phones or shared at a table still load.
+ */
+export function normalizeMenu<T extends { dishes: unknown[] }>(menu: T): T {
+  return {
+    ...menu,
+    dishes: menu.dishes.map((d) => {
+      const dish = d as Record<string, unknown>;
+      if (Array.isArray(dish.sizes) && Array.isArray(dish.add_ons)) return dish;
+      const { options, ...rest } = dish;
+      return { ...rest, sizes: dish.sizes ?? [], add_ons: dish.add_ons ?? options ?? [] };
+    }),
+  };
+}

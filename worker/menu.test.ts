@@ -14,7 +14,7 @@ function dish(name: string, price: number | null = 10): Dish {
     ingredients: [],
     allergens: [],
     diet_tags: [],
-    options: [],
+    sizes: [], add_ons: [],
   };
 }
 
